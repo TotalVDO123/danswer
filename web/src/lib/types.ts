@@ -221,6 +221,7 @@ const validSources = [
   "requesttracker",
   "file",
   "google_sites",
+  "gitlab_pages",
   "loopio",
   "dropbox",
   "salesforce",

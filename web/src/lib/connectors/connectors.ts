@@ -584,6 +584,27 @@ For example, specifying .*-support.* as a "channel" will cause the connector to 
       },
     ],
   },
+  gitlab_pages: {
+    description: "Configure Gitlab Pages connector",
+    values: [
+      {
+        type: "zip",
+        query: "Enter the zip path:",
+        label: "Zip Path",
+        name: "zip_path",
+        optional: false,
+        description:
+          "Upload a zip file containing the HTML of your Gitlab Pages",
+      },
+      {
+        type: "text",
+        query: "Enter the base URL:",
+        label: "Base URL",
+        name: "base_url",
+        optional: false,
+      },
+    ],
+  },
   zendesk: {
     description: "Configure Zendesk connector",
     values: [
@@ -948,6 +969,11 @@ export interface ClickupConfig {
 }
 
 export interface GoogleSitesConfig {
+  zip_path: string;
+  base_url: string;
+}
+
+export interface GitlabPagesConfig {
   zip_path: string;
   base_url: string;
 }
