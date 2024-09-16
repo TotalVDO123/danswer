@@ -112,7 +112,7 @@ def translate_danswer_msg_to_langchain(
     content = build_content_with_imgs(msg.message, files)
 
     if msg.message_type == MessageType.SYSTEM:
-        raise ValueError("System messages are not currently part of history")
+        return SystemMessage(content=content)
     if msg.message_type == MessageType.ASSISTANT:
         return AIMessage(content=content)
     if msg.message_type == MessageType.USER:

@@ -8,25 +8,22 @@ import {
   FiGlobe,
 } from "react-icons/fi";
 import { FeedbackType } from "../types";
-import {
-  Dispatch,
-  SetStateAction,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { useContext, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import {
   DanswerDocument,
   FilteredDanswerDocument,
 } from "@/lib/search/interfaces";
 import { SearchSummary } from "./SearchSummary";
-import { SourceIcon } from "@/components/SourceIcon";
 import { SkippedSearch } from "./SkippedSearch";
 import remarkGfm from "remark-gfm";
 import { CopyButton } from "@/components/CopyButton";
-import { ChatFileType, FileDescriptor, ToolCallMetadata } from "../interfaces";
+import {
+  ChatFileType,
+  FileDescriptor,
+  ImageGenerationResults,
+  ToolCallMetadata,
+} from "../interfaces";
 import {
   IMAGE_GENERATION_TOOL_NAME,
   SEARCH_TOOL_NAME,
@@ -44,13 +41,11 @@ import "./custom-code-styles.css";
 import { Persona } from "@/app/admin/assistants/interfaces";
 import { AssistantIcon } from "@/components/assistants/AssistantIcon";
 import { Citation } from "@/components/search/results/Citation";
-import { DocumentMetadataBlock } from "@/components/search/DocumentDisplay";
 
 import {
-  ThumbsUpIcon,
-  ThumbsDownIcon,
   LikeFeedback,
   DislikeFeedback,
+  ToolCallIcon,
 } from "@/components/icons/icons";
 import {
   CustomTooltip,
@@ -59,12 +54,14 @@ import {
 import { ValidSources } from "@/lib/types";
 import { Tooltip } from "@/components/tooltip/Tooltip";
 import { useMouseTracking } from "./hooks";
-import { InternetSearchIcon } from "@/components/InternetSearchIcon";
 import { SettingsContext } from "@/components/settings/SettingsProvider";
 import GeneratingImageDisplay from "../tools/GeneratingImageDisplay";
 import RegenerateOption from "../RegenerateOption";
 import { LlmOverride } from "@/lib/hooks";
 import { ContinueGenerating } from "./ContinueMessage";
+import DualPromptDisplay from "../tools/ImagePromptCitaiton";
+import { PopupSpec } from "@/components/admin/connectors/Popup";
+import { Popover } from "@/components/popover/Popover";
 
 const TOOLS_WITH_CUSTOM_HANDLING = [
   SEARCH_TOOL_NAME,
@@ -121,6 +118,8 @@ function FileDisplay({
 }
 
 export const AIMessage = ({
+  hasChildAI,
+  hasParentAI,
   regenerate,
   overriddenModel,
   continueGenerating,
@@ -134,7 +133,6 @@ export const AIMessage = ({
   files,
   selectedDocuments,
   query,
-  personaName,
   citedDocuments,
   toolCall,
   isComplete,
@@ -148,7 +146,10 @@ export const AIMessage = ({
   currentPersona,
   otherMessagesCanSwitchTo,
   onMessageSelection,
+  setPopup,
 }: {
+  hasChildAI?: boolean;
+  hasParentAI?: boolean;
   shared?: boolean;
   isActive?: boolean;
   continueGenerating?: () => void;
@@ -163,9 +164,8 @@ export const AIMessage = ({
   content: string | JSX.Element;
   files?: FileDescriptor[];
   query?: string;
-  personaName?: string;
   citedDocuments?: [string, DanswerDocument][] | null;
-  toolCall?: ToolCallMetadata;
+  toolCall?: ToolCallMetadata | null;
   isComplete?: boolean;
   hasDocs?: boolean;
   handleFeedback?: (feedbackType: FeedbackType) => void;
@@ -176,7 +176,10 @@ export const AIMessage = ({
   retrievalDisabled?: boolean;
   overriddenModel?: string;
   regenerate?: (modelOverRide: LlmOverride) => Promise<void>;
+  setPopup?: (popupSpec: PopupSpec | null) => void;
 }) => {
+  const [isPopoverOpen, setIsPopoverOpen] = useState(false);
+
   const toolCallGenerating = toolCall && !toolCall.tool_result;
   const processContent = (content: string | JSX.Element) => {
     if (typeof content !== "string") {
@@ -199,12 +202,20 @@ export const AIMessage = ({
         return content;
       }
     }
+    if (
+      isComplete &&
+      toolCall?.tool_result &&
+      toolCall.tool_name == IMAGE_GENERATION_TOOL_NAME
+    ) {
+      return content + ` [${toolCall.tool_name}]()`;
+    }
 
     return content + (!isComplete && !toolCallGenerating ? " [*]() " : "");
   };
   const finalContent = processContent(content as string);
 
   const [isRegenerateHovered, setIsRegenerateHovered] = useState(false);
+
   const { isHovering, trackedElementRef, hoverElementRef } = useMouseTracking();
 
   const settings = useContext(SettingsContext);
@@ -274,39 +285,50 @@ export const AIMessage = ({
     <div
       id="danswer-ai-message"
       ref={trackedElementRef}
-      className={"py-5 ml-4 px-5 relative flex "}
+      className={`${hasParentAI ? "pb-5" : "py-5"} px-2 lg:px-5 relative flex `}
     >
       <div
         className={`mx-auto ${shared ? "w-full" : "w-[90%]"}  max-w-message-max`}
       >
         <div className={`desktop:mr-12 ${!shared && "mobile:ml-0 md:ml-8"}`}>
           <div className="flex">
-            <AssistantIcon
-              size="small"
-              assistant={alternativeAssistant || currentPersona}
-            />
+            {!hasParentAI ? (
+              <AssistantIcon
+                size="small"
+                assistant={alternativeAssistant || currentPersona}
+              />
+            ) : (
+              <div className="w-6" />
+            )}
 
             <div className="w-full">
               <div className="max-w-message-max break-words">
                 <div className="w-full ml-4">
                   <div className="max-w-message-max break-words">
-                    {!toolCall || toolCall.tool_name === SEARCH_TOOL_NAME ? (
+                    {(!toolCall || toolCall.tool_name === SEARCH_TOOL_NAME) && (
                       <>
                         {query !== undefined &&
                           handleShowRetrieved !== undefined &&
+                          isCurrentlyShowingRetrieved !== undefined &&
                           !retrievalDisabled && (
                             <div className="mb-1">
                               <SearchSummary
+                                docs={docs}
+                                filteredDocs={filteredDocs}
                                 query={query}
-                                finished={toolCall?.tool_result != undefined}
-                                hasDocs={hasDocs || false}
-                                messageId={messageId}
-                                handleShowRetrieved={handleShowRetrieved}
+                                finished={
+                                  toolCall?.tool_result != undefined ||
+                                  isComplete!
+                                }
+                                toggleDocumentSelection={
+                                  toggleDocumentSelection
+                                }
                                 handleSearchQueryEdit={handleSearchQueryEdit}
                               />
                             </div>
                           )}
                         {handleForceSearch &&
+                          !hasChildAI &&
                           content &&
                           query === undefined &&
                           !hasDocs &&
@@ -318,7 +340,7 @@ export const AIMessage = ({
                             </div>
                           )}
                       </>
-                    ) : null}
+                    )}
 
                     {toolCall &&
                       !TOOLS_WITH_CUSTOM_HANDLING.includes(
@@ -371,6 +393,50 @@ export const AIMessage = ({
                                   const { node, ...rest } = props;
                                   const value = rest.children;
 
+                                  if (
+                                    value
+                                      ?.toString()
+                                      .startsWith(IMAGE_GENERATION_TOOL_NAME)
+                                  ) {
+                                    const imageGenerationResult =
+                                      toolCall?.tool_result as ImageGenerationResults;
+
+                                    return (
+                                      <Popover
+                                        open={isPopoverOpen}
+                                        onOpenChange={
+                                          () => null
+                                          // setIsPopoverOpen(isPopoverOpen => !isPopoverOpen)
+                                        } // only allow closing from the icon
+                                        content={
+                                          <button
+                                            onMouseDown={() => {
+                                              setIsPopoverOpen(!isPopoverOpen);
+                                            }}
+                                          >
+                                            <ToolCallIcon className="cursor-pointer flex-none text-blue-500 hover:text-blue-700 !h-4 !w-4 inline-block" />
+                                          </button>
+                                        }
+                                        popover={
+                                          <DualPromptDisplay
+                                            arg="Prompt"
+                                            setPopup={setPopup!}
+                                            prompt1={
+                                              imageGenerationResult[0]
+                                                .revised_prompt
+                                            }
+                                            prompt2={
+                                              imageGenerationResult[1]
+                                                .revised_prompt
+                                            }
+                                          />
+                                        }
+                                        side="top"
+                                        align="center"
+                                      />
+                                    );
+                                  }
+
                                   if (value?.toString().startsWith("*")) {
                                     return (
                                       <div className="flex-none bg-background-800 inline-block rounded-full h-3 w-3 ml-2" />
@@ -378,10 +444,6 @@ export const AIMessage = ({
                                   } else if (
                                     value?.toString().startsWith("[")
                                   ) {
-                                    // for some reason <a> tags cause the onClick to not apply
-                                    // and the links are unclickable
-                                    // TODO: fix the fact that you have to double click to follow link
-                                    // for the first link
                                     return (
                                       <Citation link={rest?.href}>
                                         {rest.children}
@@ -428,82 +490,10 @@ export const AIMessage = ({
                     ) : isComplete ? null : (
                       <></>
                     )}
-                    {isComplete && docs && docs.length > 0 && (
-                      <div className="mt-2 -mx-8 w-full mb-4 flex relative">
-                        <div className="w-full">
-                          <div className="px-8 flex gap-x-2">
-                            {!settings?.isMobile &&
-                              filteredDocs.length > 0 &&
-                              filteredDocs.slice(0, 2).map((doc, ind) => (
-                                <div
-                                  key={doc.document_id}
-                                  className={`w-[200px] rounded-lg flex-none transition-all duration-500 hover:bg-background-125 bg-text-100 px-4 pb-2 pt-1 border-b
-                              `}
-                                >
-                                  <a
-                                    href={doc.link || undefined}
-                                    target="_blank"
-                                    className="text-sm flex w-full pt-1 gap-x-1.5 overflow-hidden justify-between font-semibold text-text-700"
-                                  >
-                                    <Citation link={doc.link} index={ind + 1} />
-                                    <p className="shrink truncate ellipsis break-all">
-                                      {doc.semantic_identifier ||
-                                        doc.document_id}
-                                    </p>
-                                    <div className="ml-auto flex-none">
-                                      {doc.is_internet ? (
-                                        <InternetSearchIcon url={doc.link} />
-                                      ) : (
-                                        <SourceIcon
-                                          sourceType={doc.source_type}
-                                          iconSize={18}
-                                        />
-                                      )}
-                                    </div>
-                                  </a>
-                                  <div className="flex overscroll-x-scroll mt-.5">
-                                    <DocumentMetadataBlock document={doc} />
-                                  </div>
-                                  <div className="line-clamp-3 text-xs break-words pt-1">
-                                    {doc.blurb}
-                                  </div>
-                                </div>
-                              ))}
-                            <div
-                              onClick={() => {
-                                if (toggleDocumentSelection) {
-                                  toggleDocumentSelection();
-                                }
-                              }}
-                              key={-1}
-                              className="cursor-pointer w-[200px] rounded-lg flex-none transition-all duration-500 hover:bg-background-125 bg-text-100 px-4 py-2 border-b"
-                            >
-                              <div className="text-sm flex justify-between font-semibold text-text-700">
-                                <p className="line-clamp-1">See context</p>
-                                <div className="flex gap-x-1">
-                                  {uniqueSources.map((sourceType, ind) => {
-                                    return (
-                                      <div key={ind} className="flex-none">
-                                        <SourceIcon
-                                          sourceType={sourceType}
-                                          iconSize={18}
-                                        />
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="line-clamp-3 text-xs break-words pt-1">
-                                See more
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
                   </div>
 
-                  {handleFeedback &&
+                  {!hasChildAI &&
+                    handleFeedback &&
                     (isActive ? (
                       <div
                         className={`

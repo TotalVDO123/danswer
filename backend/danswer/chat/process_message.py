@@ -18,6 +18,8 @@ from danswer.chat.models import MessageResponseIDInfo
 from danswer.chat.models import MessageSpecificCitations
 from danswer.chat.models import QADocsResponse
 from danswer.chat.models import StreamingError
+from danswer.chat.models import StreamStopInfo
+from danswer.chat.models import StreamStopReason
 from danswer.configs.chat_configs import BING_API_KEY
 from danswer.configs.chat_configs import CHAT_TARGET_CHUNK_PERCENTAGE
 from danswer.configs.chat_configs import DISABLE_LLM_CHOOSE_SEARCH
@@ -617,6 +619,11 @@ def stream_chat_message_objects(
         tools: list[Tool] = []
         for tool_list in tool_dict.values():
             tools.extend(tool_list)
+        # Saving Gen AI answer and responding with message info
+        tool_name_to_tool_id: dict[str, int] = {}
+        for tool_id, tool_list in tool_dict.items():
+            for tool in tool_list:
+                tool_name_to_tool_id[tool.name] = tool_id
 
         # factor in tool definition size when pruning
         document_pruning_config.tool_num_tokens = compute_all_tool_tokens(
@@ -662,86 +669,168 @@ def stream_chat_message_objects(
         ai_message_files = None  # any files to associate with the AI message e.g. dall-e generated images
         dropped_indices = None
         tool_result = None
+        yielded_message_id_info = True
 
         for packet in answer.processed_streamed_output:
-            if isinstance(packet, ToolResponse):
-                if packet.id == SEARCH_RESPONSE_SUMMARY_ID:
-                    (
-                        qa_docs_response,
-                        reference_db_search_docs,
-                        dropped_indices,
-                    ) = _handle_search_tool_response_summary(
-                        packet=packet,
-                        db_session=db_session,
-                        selected_search_docs=selected_db_search_docs,
-                        # Deduping happens at the last step to avoid harming quality by dropping content early on
-                        dedupe_docs=retrieval_options.dedupe_docs
-                        if retrieval_options
-                        else False,
-                    )
-                    yield qa_docs_response
-                elif packet.id == SECTION_RELEVANCE_LIST_ID:
-                    relevance_sections = packet.response
+            if isinstance(packet, StreamStopInfo):
+                if packet.stop_reason is not StreamStopReason.NEW_RESPONSE:
+                    break
 
-                    if reference_db_search_docs is not None:
-                        llm_indices = relevant_sections_to_indices(
-                            relevance_sections=relevance_sections,
-                            items=[
-                                translate_db_search_doc_to_server_search_doc(doc)
-                                for doc in reference_db_search_docs
-                            ],
-                        )
+                db_citations = None
 
-                        if dropped_indices:
-                            llm_indices = drop_llm_indices(
-                                llm_indices=llm_indices,
-                                search_docs=reference_db_search_docs,
-                                dropped_indices=dropped_indices,
-                            )
-
-                        yield LLMRelevanceFilterResponse(
-                            llm_selected_doc_indices=llm_indices
-                        )
-
-                elif packet.id == FINAL_CONTEXT_DOCUMENTS_ID:
-                    yield FinalUsedContextDocsResponse(
-                        final_context_docs=packet.response
-                    )
-                elif packet.id == IMAGE_GENERATION_RESPONSE_ID:
-                    img_generation_response = cast(
-                        list[ImageGenerationResponse], packet.response
+                if reference_db_search_docs:
+                    db_citations = _translate_citations(
+                        citations_list=answer.citations,
+                        db_docs=reference_db_search_docs,
                     )
 
-                    file_ids = save_files_from_urls(
-                        [img.url for img in img_generation_response]
+                # Saving Gen AI answer and responding with message info
+                if tool_result is None:
+                    tool_call = None
+                else:
+                    tool_call = ToolCall(
+                        tool_id=tool_name_to_tool_id[tool_result.tool_name],
+                        tool_name=tool_result.tool_name,
+                        tool_arguments=tool_result.tool_args,
+                        tool_result=tool_result.tool_result,
                     )
-                    ai_message_files = [
-                        FileDescriptor(id=str(file_id), type=ChatFileType.IMAGE)
-                        for file_id in file_ids
-                    ]
-                    yield ImageGenerationDisplay(
-                        file_ids=[str(file_id) for file_id in file_ids]
-                    )
-                elif packet.id == INTERNET_SEARCH_RESPONSE_ID:
-                    (
-                        qa_docs_response,
-                        reference_db_search_docs,
-                    ) = _handle_internet_search_tool_response_summary(
-                        packet=packet,
-                        db_session=db_session,
-                    )
-                    yield qa_docs_response
-                elif packet.id == CUSTOM_TOOL_RESPONSE_ID:
-                    custom_tool_response = cast(CustomToolCallSummary, packet.response)
-                    yield CustomToolResponse(
-                        response=custom_tool_response.tool_result,
-                        tool_name=custom_tool_response.tool_name,
-                    )
+
+                gen_ai_response_message = partial_response(
+                    reserved_message_id=reserved_message_id,
+                    message=answer.llm_answer,
+                    rephrased_query=cast(
+                        QADocsResponse, qa_docs_response
+                    ).rephrased_query
+                    if qa_docs_response is not None
+                    else None,
+                    reference_docs=reference_db_search_docs,
+                    files=ai_message_files,
+                    token_count=len(llm_tokenizer_encode_func(answer.llm_answer)),
+                    citations=cast(MessageSpecificCitations, db_citations).citation_map
+                    if db_citations is not None
+                    else None,
+                    error=None,
+                    tool_call=tool_call,
+                )
+
+                db_session.commit()  # actually save user / assistant message
+
+                msg_detail_response = translate_db_message_to_chat_message_detail(
+                    gen_ai_response_message
+                )
+
+                yield msg_detail_response
+                reserved_message_id = reserve_message_id(
+                    db_session=db_session,
+                    chat_session_id=chat_session_id,
+                    parent_message=gen_ai_response_message.id
+                    if user_message is not None
+                    else gen_ai_response_message.id,
+                    message_type=MessageType.ASSISTANT,
+                )
+                yielded_message_id_info = False
+
+                partial_response = partial(
+                    create_new_chat_message,
+                    chat_session_id=chat_session_id,
+                    parent_message=gen_ai_response_message,
+                    prompt_id=prompt_id,
+                    overridden_model=overridden_model,
+                    message_type=MessageType.ASSISTANT,
+                    alternate_assistant_id=new_msg_req.alternate_assistant_id,
+                    db_session=db_session,
+                    commit=False,
+                )
+                reference_db_search_docs = None
 
             else:
-                if isinstance(packet, ToolCallFinalResult):
-                    tool_result = packet
-                yield cast(ChatPacket, packet)
+                if not yielded_message_id_info:
+                    yield MessageResponseIDInfo(
+                        user_message_id=gen_ai_response_message.id,
+                        reserved_assistant_message_id=reserved_message_id,
+                    )
+                    yielded_message_id_info = True
+
+                if isinstance(packet, ToolResponse):
+                    if packet.id == SEARCH_RESPONSE_SUMMARY_ID:
+                        (
+                            qa_docs_response,
+                            reference_db_search_docs,
+                            dropped_indices,
+                        ) = _handle_search_tool_response_summary(
+                            packet=packet,
+                            db_session=db_session,
+                            selected_search_docs=selected_db_search_docs,
+                            # Deduping happens at the last step to avoid harming quality by dropping content early on
+                            dedupe_docs=retrieval_options.dedupe_docs
+                            if retrieval_options
+                            else False,
+                        )
+                        yield qa_docs_response
+                    elif packet.id == SECTION_RELEVANCE_LIST_ID:
+                        relevance_sections = packet.response
+
+                        if reference_db_search_docs is not None:
+                            llm_indices = relevant_sections_to_indices(
+                                relevance_sections=relevance_sections,
+                                items=[
+                                    translate_db_search_doc_to_server_search_doc(doc)
+                                    for doc in reference_db_search_docs
+                                ],
+                            )
+
+                            if dropped_indices:
+                                llm_indices = drop_llm_indices(
+                                    llm_indices=llm_indices,
+                                    search_docs=reference_db_search_docs,
+                                    dropped_indices=dropped_indices,
+                                )
+
+                            yield LLMRelevanceFilterResponse(
+                                llm_selected_doc_indices=llm_indices
+                            )
+
+                    elif packet.id == FINAL_CONTEXT_DOCUMENTS_ID:
+                        yield FinalUsedContextDocsResponse(
+                            final_context_docs=packet.response
+                        )
+                    elif packet.id == IMAGE_GENERATION_RESPONSE_ID:
+                        img_generation_response = cast(
+                            list[ImageGenerationResponse], packet.response
+                        )
+
+                        file_ids = save_files_from_urls(
+                            [img.url for img in img_generation_response]
+                        )
+                        ai_message_files = [
+                            FileDescriptor(id=str(file_id), type=ChatFileType.IMAGE)
+                            for file_id in file_ids
+                        ]
+                        yield ImageGenerationDisplay(
+                            file_ids=[str(file_id) for file_id in file_ids]
+                        )
+                    elif packet.id == INTERNET_SEARCH_RESPONSE_ID:
+                        (
+                            qa_docs_response,
+                            reference_db_search_docs,
+                        ) = _handle_internet_search_tool_response_summary(
+                            packet=packet,
+                            db_session=db_session,
+                        )
+                        yield qa_docs_response
+                    elif packet.id == CUSTOM_TOOL_RESPONSE_ID:
+                        custom_tool_response = cast(
+                            CustomToolCallSummary, packet.response
+                        )
+                        yield CustomToolResponse(
+                            response=custom_tool_response.tool_result,
+                            tool_name=custom_tool_response.tool_name,
+                        )
+                else:
+                    if isinstance(packet, ToolCallFinalResult):
+                        tool_result = packet
+                    yield cast(ChatPacket, packet)
+
         logger.debug("Reached end of stream")
     except Exception as e:
         error_msg = str(e)
@@ -767,11 +856,8 @@ def stream_chat_message_objects(
             )
             yield AllCitations(citations=answer.citations)
 
-        # Saving Gen AI answer and responding with message info
-        tool_name_to_tool_id: dict[str, int] = {}
-        for tool_id, tool_list in tool_dict.items():
-            for tool in tool_list:
-                tool_name_to_tool_id[tool.name] = tool_id
+        if answer.llm_answer == "":
+            return
 
         gen_ai_response_message = partial_response(
             reserved_message_id=reserved_message_id,
@@ -786,16 +872,14 @@ def stream_chat_message_objects(
             if message_specific_citations
             else None,
             error=None,
-            tool_calls=[
-                ToolCall(
-                    tool_id=tool_name_to_tool_id[tool_result.tool_name],
-                    tool_name=tool_result.tool_name,
-                    tool_arguments=tool_result.tool_args,
-                    tool_result=tool_result.tool_result,
-                )
-            ]
+            tool_call=ToolCall(
+                tool_id=tool_name_to_tool_id[tool_result.tool_name],
+                tool_name=tool_result.tool_name,
+                tool_arguments=tool_result.tool_args,
+                tool_result=tool_result.tool_result,
+            )
             if tool_result
-            else [],
+            else None,
         )
 
         logger.debug("Committing messages")
