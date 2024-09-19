@@ -12,7 +12,12 @@ env:
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
 
 jobs:
+  check-changes:
+    uses: ./.github/workflows/check-backend-changes.yml
+
   integration-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'true'
     runs-on: 
       group: 'arm64-image-builders'
     steps:
@@ -160,3 +165,10 @@ jobs:
         run: |
           cd deployment/docker_compose
           docker compose -f docker-compose.dev.yml -p danswer-stack down -v
+
+  skip-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No changes in backend, skipping this test."

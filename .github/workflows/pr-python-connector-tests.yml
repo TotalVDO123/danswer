@@ -17,7 +17,12 @@ env:
   CONFLUENCE_ACCESS_TOKEN: ${{ secrets.CONFLUENCE_ACCESS_TOKEN }}
 
 jobs:
+  check-changes:
+    uses: ./.github/workflows/check-backend-changes.yml
+
   connectors-check:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'true'
     runs-on: ubuntu-latest
 
     env:
@@ -55,3 +60,10 @@ jobs:
             -H 'Content-type: application/json' \
             --data '{"text":"Scheduled Connector Tests failed! Check the run at: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"}' \
             $SLACK_WEBHOOK
+
+  skip-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No changes in backend, skipping this test."

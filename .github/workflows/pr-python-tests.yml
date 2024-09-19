@@ -6,7 +6,12 @@ on:
     branches: [ main ]
 
 jobs:
+  check-changes:
+    uses: ./.github/workflows/check-backend-changes.yml
+
   backend-check:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'true'
     runs-on: ubuntu-latest
 
     env:
@@ -35,3 +40,11 @@ jobs:
     - name: Run Tests
       shell: script -q -e -c "bash --noprofile --norc -eo pipefail {0}"
       run: py.test -o junit_family=xunit2 -xv --ff backend/tests/unit
+
+
+  skip-tests:
+    needs: check-changes
+    if: needs.check-changes.outputs.run-tests == 'false'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "No changes in backend, skipping this test."
