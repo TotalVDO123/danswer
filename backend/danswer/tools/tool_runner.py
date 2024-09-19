@@ -1,3 +1,4 @@
+import base64
 from collections.abc import Callable
 from collections.abc import Generator
 from typing import Any
@@ -12,9 +13,10 @@ from danswer.utils.threadpool_concurrency import run_functions_tuples_in_paralle
 
 
 class ToolRunner:
-    def __init__(self, tool: Tool, args: dict[str, Any]):
+    def __init__(self, tool: Tool, args: dict[str, Any], llm: LLM | None = None):
         self.tool = tool
         self.args = args
+        self._llm = llm
 
         self._tool_responses: list[ToolResponse] | None = None
 
@@ -22,12 +24,25 @@ class ToolRunner:
         return ToolCallKickoff(tool_name=self.tool.name, tool_args=self.args)
 
     def tool_responses(self) -> Generator[ToolResponse, None, None]:
+        print("i am in the tool responses function")
         if self._tool_responses is not None:
+            print("prev")
+            print(self._tool_responses)
+
             yield from self._tool_responses
             return
 
         tool_responses: list[ToolResponse] = []
-        for tool_response in self.tool.run(**self.args):
+        print("runinnig the tool")
+        print(self.tool.name)
+
+        for tool_response in self.tool.run(llm=self._llm, **self.args):
+            if isinstance(tool_response.response, bytes):
+                tool_response.response = base64.b64encode(
+                    tool_response.response
+                ).decode("utf-8")
+
+            print("tool response")
             yield tool_response
             tool_responses.append(tool_response)
 
@@ -52,4 +67,5 @@ def check_which_tools_should_run_for_non_tool_calling_llm(
         (tool.get_args_for_non_tool_calling_llm, (query, history, llm))
         for tool in tools
     ]
+
     return run_functions_tuples_in_parallel(tool_args_list)

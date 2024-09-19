@@ -41,11 +41,13 @@ from danswer.llm.answering.stream_processing.utils import map_document_id_order
 from danswer.llm.interfaces import LLM
 from danswer.llm.interfaces import ToolChoiceOptions
 from danswer.natural_language_processing.utils import get_tokenizer
+from danswer.tools.analysis.analysis_tool import CSVAnalysisTool
 from danswer.tools.custom.custom_tool_prompt_builder import (
     build_user_message_for_custom_tool_for_non_tool_calling_llm,
 )
 from danswer.tools.force import filter_tools_for_force_tool_use
 from danswer.tools.force import ForceUseTool
+from danswer.tools.graphing.graphing_tool import GraphingTool
 from danswer.tools.images.image_generation_tool import IMAGE_GENERATION_RESPONSE_ID
 from danswer.tools.images.image_generation_tool import ImageGenerationResponse
 from danswer.tools.images.image_generation_tool import ImageGenerationTool
@@ -245,48 +247,38 @@ class Answer:
                     )
                 ]
 
-                existing_message = ""
-
-                for message in self.llm.stream(
-                    prompt=prompt,
-                    tools=final_tool_definitions if final_tool_definitions else None,
-                    tool_choice="required" if self.force_use_tool.force_use else None,
+            print(final_tool_definitions)
+            for message in self.llm.stream(
+                prompt=prompt,
+                tools=final_tool_definitions if final_tool_definitions else None,
+                tool_choice="required" if self.force_use_tool.force_use else None,
+            ):
+                if isinstance(message, AIMessageChunk) and (
+                    message.tool_call_chunks or message.tool_calls
                 ):
-                    if isinstance(message, AIMessageChunk) and (
-                        message.tool_call_chunks or message.tool_calls
-                    ):
-                        if tool_call_chunk is None:
-                            tool_call_chunk = message
-                        else:
-                            if len(existing_message) > 0:
-                                yield StreamStopInfo(
-                                    stop_reason=StreamStopReason.NEW_RESPONSE
-                                )
-                                existing_message = ""
-
-                            tool_call_chunk += message  # type: ignore
+                    if tool_call_chunk is None:
+                        tool_call_chunk = message
                     else:
-                        if message.content:
-                            if self.is_cancelled or tool_calls > 0:
-                                return
+                        tool_call_chunk += message  # type: ignore
+                else:
+                    if message.content:
+                        if self.is_cancelled:
+                            return
+                        yield cast(str, message.content)
+                    if (
+                        message.additional_kwargs.get("usage_metadata", {}).get("stop")
+                        == "length"
+                    ):
+                        yield StreamStopInfo(
+                            stop_reason=StreamStopReason.CONTEXT_LENGTH
+                        )
 
-                            existing_message += cast(str, message.content)
-                            yield cast(str, message.content)
-                        if (
-                            message.additional_kwargs.get("usage_metadata", {}).get(
-                                "stop"
-                            )
-                            == "length"
-                        ):
-                            yield StreamStopInfo(
-                                stop_reason=StreamStopReason.CONTEXT_LENGTH
-                            )
-
-                if not tool_call_chunk:
-                    logger.info("Skipped tool call but generated message")
-                    return
+            if not tool_call_chunk:
+                logger.info("Skipped tool call but generated message")
+                return
 
             tool_call_requests = tool_call_chunk.tool_calls
+            print(tool_call_requests)
 
             for tool_call_request in tool_call_requests:
                 tool_calls += 1
@@ -390,11 +382,7 @@ class Answer:
                 prompt = prompt_builder.build(tool_call_summary=tool_call_summary)
 
                 response_content = ""
-                for content in self._process_llm_stream(
-                    prompt=prompt,
-                    tools=None
-                    # tools=[tool.tool_definition() for tool in self.tools],
-                ):
+                for content in self._process_llm_stream(prompt=prompt, tools=None):
                     if isinstance(content, str):
                         response_content += content
                     yield content
@@ -528,9 +516,34 @@ class Answer:
             tool_calls += 1
 
             tool, tool_args = chosen_tool_and_args
-            tool_runner = ToolRunner(tool, tool_args)
+            print("tool args")
+            print(tool_args)
+
+            tool_runner = ToolRunner(tool, tool_args, self.llm)
             yield tool_runner.kickoff()
             tool_responses = []
+            file_name = tool_runner.args["filename"]
+
+            print(f"file ame is {file_name}")
+
+            csv_file = None
+            for message in self.message_history:
+                if message.files:
+                    csv_file = next(
+                        (file for file in message.files if file.filename == file_name),
+                        None,
+                    )
+                    if csv_file:
+                        break
+            print(self.latest_query_files)
+            if csv_file is None:
+                raise ValueError(
+                    f"CSV file with name '{file_name}' not found in latest query files."
+                )
+            print("csv file found")
+
+            tool_runner.args["filename"] = csv_file.content
+
             for response in tool_runner.tool_responses():
                 tool_responses.append(response)
                 yield response
@@ -551,22 +564,34 @@ class Answer:
                     prompt_builder, final_context_documents
                 )
             elif tool.name == ImageGenerationTool._NAME:
-                img_urls = []
                 for response in tool_runner.tool_responses():
                     if response.id == IMAGE_GENERATION_RESPONSE_ID:
                         img_generation_response = cast(
                             list[ImageGenerationResponse], response.response
                         )
-                        img_urls = [img.url for img in img_generation_response]
+                        # img_urls = [img.url for img in img_generation_response]
+                        prompt_builder.update_user_prompt(
+                            build_image_generation_user_prompt(
+                                query=self.question,
+                                img_urls=[img.url for img in img_generation_response],
+                            )
+                        )
 
                     yield response
+            elif tool.name == CSVAnalysisTool._NAME:
+                for response in tool_runner.tool_responses():
+                    yield response
 
-                prompt_builder.update_user_prompt(
-                    build_image_generation_user_prompt(
-                        query=self.question,
-                        img_urls=img_urls,
+            elif tool.name == GraphingTool._NAME:
+                for response in tool_runner.tool_responses():
+                    print("RESOS")
+                    print(response)
+                    prompt_builder.update_user_prompt(
+                        build_image_generation_user_prompt(
+                            query=self.question,
+                            # img_urls=img_urls,
+                        )
                     )
-                )
             else:
                 prompt_builder.update_user_prompt(
                     HumanMessage(
@@ -764,5 +789,4 @@ class Answer:
             if not self.is_connected():
                 logger.debug("Answer stream has been cancelled")
             self._is_cancelled = not self.is_connected()
-
         return self._is_cancelled
