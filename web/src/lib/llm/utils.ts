@@ -125,3 +125,5 @@ export const destructureValue = (value: string): LlmOverride => {
     modelName,
   };
 };
+
+export const defaultPasswordMask = "**************************";

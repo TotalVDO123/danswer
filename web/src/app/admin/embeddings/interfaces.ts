@@ -14,6 +14,10 @@ export interface RerankingDetails {
   rerank_api_key: string | null;
   rerank_api_url: string | null;
 }
+export interface RerankingDetailsSnapshot
+  extends Omit<RerankingDetails, "rerank_api_key"> {
+  rerank_api_key_set: boolean;
+}
 
 export enum RerankerProvider {
   COHERE = "cohere",
@@ -38,6 +42,14 @@ export interface SavedSearchSettings
   extends RerankingDetails,
     AdvancedSearchConfiguration {
   provider_type: EmbeddingProvider | null;
+}
+
+export interface SearchSettingsSnapshot
+  extends Omit<RerankingDetails, "rerank_api_key">,
+    Omit<AdvancedSearchConfiguration, "api_url"> {
+  provider_type: EmbeddingProvider | null;
+  rerank_api_key_set: boolean;
+  api_key_set: boolean;
 }
 
 export interface RerankingModel {

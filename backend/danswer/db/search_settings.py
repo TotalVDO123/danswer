@@ -187,6 +187,7 @@ def update_current_search_settings(
         and search_settings.rerank_model_name is not None
         and current_settings.rerank_model_name != search_settings.rerank_model_name
     ):
+        print("WARMIGN THIS STUFF UP!")
         warm_up_cross_encoder(search_settings.rerank_model_name)
 
     update_search_settings(current_settings, search_settings, preserved_fields)

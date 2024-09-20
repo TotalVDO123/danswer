@@ -5,13 +5,13 @@ from pydantic import Field
 
 from danswer.llm.llm_provider_options import fetch_models_for_provider
 
-
 if TYPE_CHECKING:
     from danswer.db.models import LLMProvider as LLMProviderModel
 
 
 class TestLLMRequest(BaseModel):
     # provider level
+    existing_api_key: bool = False
     provider: str
     api_key: str | None = None
     api_base: str | None = None
@@ -74,6 +74,14 @@ class LLMProviderUpsertRequest(LLMProvider):
     model_names: list[str] | None = None
 
 
+class LLMProviderUpdateRequest(LLMProvider):
+    api_key_set: bool
+
+
+class LLMProviderCreationRequest(LLMProvider):
+    pass
+
+
 class FullLLMProvider(LLMProvider):
     id: int
     is_default_provider: bool | None = None
@@ -82,10 +90,10 @@ class FullLLMProvider(LLMProvider):
     @classmethod
     def from_model(cls, llm_provider_model: "LLMProviderModel") -> "FullLLMProvider":
         return cls(
+            api_key=llm_provider_model.api_key,
             id=llm_provider_model.id,
             name=llm_provider_model.name,
             provider=llm_provider_model.provider,
-            api_key=llm_provider_model.api_key,
             api_base=llm_provider_model.api_base,
             api_version=llm_provider_model.api_version,
             custom_config=llm_provider_model.custom_config,
@@ -101,3 +109,23 @@ class FullLLMProvider(LLMProvider):
             is_public=llm_provider_model.is_public,
             groups=[group.id for group in llm_provider_model.groups],
         )
+
+
+class FullLLMProviderSnapshot(FullLLMProvider):
+    api_key: None = None
+    api_key_set: bool
+
+    @classmethod
+    def from_full_llm_provider(
+        cls, settings: FullLLMProvider
+    ) -> "FullLLMProviderSnapshot":
+        data = settings.dict(exclude={"api_key"})
+        data["api_key_set"] = bool(settings.api_key)
+        return cls(**data)
+
+    @classmethod
+    def from_model(
+        cls, llm_provider_model: "LLMProviderModel"
+    ) -> "FullLLMProviderSnapshot":
+        full_provider = FullLLMProvider.from_model(llm_provider_model)
+        return cls.from_full_llm_provider(full_provider)

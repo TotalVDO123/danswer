@@ -14,6 +14,9 @@ from danswer.db.models import User__UserGroup
 from danswer.server.manage.embedding.models import CloudEmbeddingProvider
 from danswer.server.manage.embedding.models import CloudEmbeddingProviderCreationRequest
 from danswer.server.manage.llm.models import FullLLMProvider
+from danswer.server.manage.llm.models import FullLLMProviderSnapshot
+from danswer.server.manage.llm.models import LLMProviderCreationRequest
+from danswer.server.manage.llm.models import LLMProviderUpdateRequest
 from danswer.server.manage.llm.models import LLMProviderUpsertRequest
 from shared_configs.enums import EmbeddingProvider
 
@@ -61,14 +64,69 @@ def upsert_cloud_embedding_provider(
     return CloudEmbeddingProvider.from_request(existing_provider)
 
 
+def update_llm_provider(
+    llm_provider_update: LLMProviderUpdateRequest,
+    db_session: Session,
+) -> FullLLMProviderSnapshot:
+    existing_llm_provider = db_session.scalar(
+        select(LLMProviderModel).where(
+            LLMProviderModel.name == llm_provider_update.name
+        )
+    )
+    if not existing_llm_provider:
+        raise ValueError(
+            f"LLM Provider with name {llm_provider_update.name} does not exist"
+        )
+    return FullLLMProviderSnapshot.from_full_llm_provider(
+        FullLLMProvider.from_model(existing_llm_provider)
+    )
+
+
+def create_llm_provider(
+    llm_provider_creation: LLMProviderCreationRequest,
+    db_session: Session,
+) -> FullLLMProviderSnapshot:
+    new_llm_provider = LLMProviderModel(name=llm_provider_creation.name)
+    db_session.add(new_llm_provider)
+    db_session.commit()
+    return FullLLMProviderSnapshot.from_full_llm_provider(
+        FullLLMProvider.from_model(new_llm_provider)
+    )
+
+
+def get_llm_provider(
+    llm_provider_name: str, db_session: Session, user: User | None = None
+) -> FullLLMProviderSnapshot:
+    if not user or not user.is_admin:
+        raise ValueError("User does not have access to this LLM Provider")
+
+    return FullLLMProviderSnapshot.from_full_llm_provider(
+        FullLLMProvider.from_model(
+            db_session.scalar(
+                select(LLMProviderModel).where(
+                    LLMProviderModel.name == llm_provider_name
+                )
+            )
+        )
+    )
+
+
 def upsert_llm_provider(
-    llm_provider: LLMProviderUpsertRequest, db_session: Session
-) -> FullLLMProvider:
+    llm_provider: LLMProviderUpsertRequest,
+    db_session: Session,
+    is_creation: bool = True,
+) -> FullLLMProviderSnapshot:
     existing_llm_provider = db_session.scalar(
         select(LLMProviderModel).where(LLMProviderModel.name == llm_provider.name)
     )
+    if existing_llm_provider and is_creation:
+        raise ValueError(f"LLM Provider with name {llm_provider.name} already exists")
 
     if not existing_llm_provider:
+        if not is_creation:
+            raise ValueError(
+                f"LLM Provider with name {llm_provider.name} does not exist"
+            )
         existing_llm_provider = LLMProviderModel(name=llm_provider.name)
         db_session.add(existing_llm_provider)
 
@@ -96,7 +154,9 @@ def upsert_llm_provider(
 
     db_session.commit()
 
-    return FullLLMProvider.from_model(existing_llm_provider)
+    return FullLLMProviderSnapshot.from_full_llm_provider(
+        FullLLMProvider.from_model(existing_llm_provider)
+    )
 
 
 def fetch_existing_embedding_providers(

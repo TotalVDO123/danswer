@@ -22,7 +22,7 @@ export interface EmbeddingDetails {
 import { EmbeddingIcon } from "@/components/icons/icons";
 
 import Link from "next/link";
-import { SavedSearchSettings } from "../../embeddings/interfaces";
+import { SearchSettingsSnapshot } from "../../embeddings/interfaces";
 import UpgradingPage from "./UpgradingPage";
 import { useContext } from "react";
 import { SettingsContext } from "@/components/settings/SettingsProvider";
@@ -40,7 +40,7 @@ function Main() {
   );
 
   const { data: searchSettings, isLoading: isLoadingSearchSettings } =
-    useSWR<SavedSearchSettings | null>(
+    useSWR<SearchSettingsSnapshot | null>(
       "/api/search-settings/get-current-search-settings",
       errorHandlingFetcher,
       { refreshInterval: 5000 } // 5 seconds
