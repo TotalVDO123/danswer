@@ -8,6 +8,7 @@ from danswer.chat.models import RetrievalDocs
 from danswer.configs.constants import DocumentSource
 from danswer.configs.constants import MessageType
 from danswer.configs.constants import SearchFeedbackType
+from danswer.configs.constants import SessionType
 from danswer.db.enums import ChatSessionSharedStatus
 from danswer.file_store.models import FileDescriptor
 from danswer.llm.override_models import LLMOverride
@@ -127,6 +128,10 @@ class ChatRenameRequest(BaseModel):
 
 class ChatSessionUpdateRequest(BaseModel):
     sharing_status: ChatSessionSharedStatus
+
+
+class DeleteAllSessionsRequest(BaseModel):
+    session_type: SessionType
 
 
 class RenameChatSessionResponse(BaseModel):

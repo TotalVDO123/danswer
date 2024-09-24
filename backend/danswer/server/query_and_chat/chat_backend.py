@@ -22,6 +22,7 @@ from danswer.configs.constants import FileOrigin
 from danswer.configs.constants import MessageType
 from danswer.db.chat import create_chat_session
 from danswer.db.chat import create_new_chat_message
+from danswer.db.chat import delete_all_chat_sessions_for_user
 from danswer.db.chat import delete_chat_session
 from danswer.db.chat import get_chat_message
 from danswer.db.chat import get_chat_messages_by_session
@@ -63,6 +64,7 @@ from danswer.server.query_and_chat.models import ChatSessionsResponse
 from danswer.server.query_and_chat.models import ChatSessionUpdateRequest
 from danswer.server.query_and_chat.models import CreateChatMessageRequest
 from danswer.server.query_and_chat.models import CreateChatSessionID
+from danswer.server.query_and_chat.models import DeleteAllSessionsRequest
 from danswer.server.query_and_chat.models import LLMOverride
 from danswer.server.query_and_chat.models import PromptOverride
 from danswer.server.query_and_chat.models import RenameChatSessionResponse
@@ -259,6 +261,22 @@ def patch_chat_session(
         chat_session_id=session_id,
         sharing_status=chat_session_update_req.sharing_status,
     )
+    return None
+
+
+@router.delete("/delete-all-chat-sessions")
+def delete_all_chat_sessions(
+    deletion_request: DeleteAllSessionsRequest,
+    user: User | None = Depends(current_user),
+    db_session: Session = Depends(get_session),
+) -> None:
+    try:
+        delete_all_chat_sessions_for_user(
+            user=user, session_type=deletion_request.session_type, db_session=db_session
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     return None
 
 

@@ -33,7 +33,11 @@ import FixedLogo from "@/app/chat/shared_chat_search/FixedLogo";
 import { usePopup } from "../admin/connectors/Popup";
 import { FeedbackType } from "@/app/chat/types";
 import { FeedbackModal } from "@/app/chat/modal/FeedbackModal";
-import { deleteChatSession, handleChatFeedback } from "@/app/chat/lib";
+import {
+  deleteAllChatSessions,
+  deleteChatSession,
+  handleChatFeedback,
+} from "@/app/chat/lib";
 import SearchAnswer from "./SearchAnswer";
 import { DeleteEntityModal } from "../modals/DeleteEntityModal";
 import { ApiKeyModal } from "../llm/ApiKeyModal";
@@ -97,6 +101,8 @@ export const SearchSection = ({
     error: null,
     messageId: null,
   });
+
+  const [showDeleteAllModal, setShowDeleteAllModal] = useState(false);
 
   const [showApiKeyModal, setShowApiKeyModal] = useState(true);
 
@@ -599,6 +605,30 @@ export const SearchSection = ({
           !shouldShowWelcomeModal && (
             <ApiKeyModal hide={() => setShowApiKeyModal(false)} />
           )}
+        {showDeleteAllModal && (
+          <DeleteEntityModal
+            entityType="All Searches"
+            entityName="all your search sessions"
+            onClose={() => setShowDeleteAllModal(false)}
+            additionalDetails="This action cannot be undone. All your search sessions will be deleted."
+            onSubmit={async () => {
+              const response = await deleteAllChatSessions("Search");
+              if (response.ok) {
+                setShowDeleteAllModal(false);
+                setPopup({
+                  message: "All your search sessions have been deleted.",
+                  type: "success",
+                });
+              } else {
+                setPopup({
+                  message: "Failed to delete all search sessions.",
+                  type: "error",
+                });
+              }
+              router.refresh();
+            }}
+          />
+        )}
 
         {deletingChatSession && (
           <DeleteEntityModal
@@ -664,6 +694,7 @@ export const SearchSection = ({
               toggleSidebar={toggleSidebar}
               toggled={toggledSidebar}
               existingChats={querySessions}
+              showDeleteAllModal={() => setShowDeleteAllModal(true)}
             />
           </div>
         </div>
