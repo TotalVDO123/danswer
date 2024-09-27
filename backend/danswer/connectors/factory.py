@@ -45,6 +45,7 @@ from danswer.connectors.wikipedia.connector import WikipediaConnector
 from danswer.connectors.zendesk.connector import ZendeskConnector
 from danswer.connectors.zulip.connector import ZulipConnector
 from danswer.db.credentials import backend_update_credential_json
+from danswer.connectors.github_pages.connector import GitHubPagesConnector
 from danswer.db.models import Credential
 
 
@@ -97,6 +98,7 @@ def identify_connector_class(
         DocumentSource.R2: BlobStorageConnector,
         DocumentSource.GOOGLE_CLOUD_STORAGE: BlobStorageConnector,
         DocumentSource.OCI_STORAGE: BlobStorageConnector,
+        DocumentSource.GITHUB_PAGES: GitHubPagesConnector,
     }
     connector_by_source = connector_map.get(source, {})
 
