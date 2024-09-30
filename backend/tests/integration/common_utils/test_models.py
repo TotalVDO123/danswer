@@ -9,6 +9,7 @@ from danswer.db.enums import AccessType
 from danswer.search.enums import RecencyBiasSetting
 from danswer.server.documents.models import DocumentSource
 from danswer.server.documents.models import InputType
+from shared_configs.enums import EmbeddingProvider
 
 """
 These data models are used to represent the data on the testing side of things.
@@ -119,6 +120,39 @@ class DATestPersona(BaseModel):
     llm_model_version_override: str | None
     users: list[str]
     groups: list[int]
+
+
+class TestSearchSettings(BaseModel):
+    model_name: str
+    model_dim: int
+    normalize: bool
+    query_prefix: str | None
+    passage_prefix: str | None
+    index_name: str
+    provider_type: str | None
+    multipass_indexing: bool
+    multilingual_expansion: list[str]
+    disable_rerank_for_streaming: bool
+    rerank_model_name: str | None
+    rerank_provider_type: str | None
+    rerank_api_key: str | None = None
+    num_rerank: int
+
+    def __eq__(self, other: Any) -> bool:
+        if not isinstance(other, TestSearchSettings):
+            return False
+        return self.dict() == other.dict()
+
+
+class TestCloudEmbeddingProvider(BaseModel):
+    provider_type: EmbeddingProvider
+    api_key: str | None
+    api_url: str | None
+
+
+class TestFullModelVersionResponse(BaseModel):
+    current_settings: TestSearchSettings | None
+    secondary_settings: TestSearchSettings | None
 
 
 #

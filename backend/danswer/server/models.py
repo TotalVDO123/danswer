@@ -23,7 +23,8 @@ class ApiKey(BaseModel):
 
 
 class IdReturn(BaseModel):
-    id: int
+    search_settings_id: int
+    index_name: str
 
 
 class MinimalUserSnapshot(BaseModel):
