@@ -3,16 +3,17 @@ import { StandardAnswerCreationForm } from "@/app/ee/admin/standard-answer/Stand
 import { fetchSS } from "@/lib/utilsSS";
 import { ErrorCallout } from "@/components/ErrorCallout";
 import { BackButton } from "@/components/BackButton";
-import { Text } from "@tremor/react";
 import { ClipboardIcon } from "@/components/icons/icons";
-import { StandardAnswer, StandardAnswerCategory } from "@/lib/types";
+import { StandardAnswer } from "@/lib/types";
+import { Persona } from "@/app/admin/assistants/interfaces";
 
 async function Page({ params }: { params: { id: string } }) {
   const tasks = [
     fetchSS("/manage/admin/standard-answer"),
-    fetchSS(`/manage/admin/standard-answer/category`),
+    fetchSS("/admin/persona"),
   ];
-  const [standardAnswersResponse, standardAnswerCategoriesResponse] =
+
+  const [standardAnswersResponse, allPersonaResponse] =
     await Promise.all(tasks);
   if (!standardAnswersResponse.ok) {
     return (
@@ -27,7 +28,6 @@ async function Page({ params }: { params: { id: string } }) {
   const standardAnswer = allStandardAnswers.find(
     (answer) => answer.id.toString() === params.id
   );
-
   if (!standardAnswer) {
     return (
       <ErrorCallout
@@ -37,17 +37,16 @@ async function Page({ params }: { params: { id: string } }) {
     );
   }
 
-  if (!standardAnswerCategoriesResponse.ok) {
+  if (!allPersonaResponse.ok) {
     return (
       <ErrorCallout
         errorTitle="Something went wrong :("
-        errorMsg={`Failed to fetch standard answer categories - ${await standardAnswerCategoriesResponse.text()}`}
+        errorMsg={`Failed to fetch personas - ${await allPersonaResponse.text()}`}
       />
     );
   }
+  const allPersonas = (await allPersonaResponse.json()) as Persona[];
 
-  const standardAnswerCategories =
-    (await standardAnswerCategoriesResponse.json()) as StandardAnswerCategory[];
   return (
     <div className="container mx-auto">
       <BackButton />
@@ -57,8 +56,8 @@ async function Page({ params }: { params: { id: string } }) {
       />
 
       <StandardAnswerCreationForm
-        standardAnswerCategories={standardAnswerCategories}
         existingStandardAnswer={standardAnswer}
+        existingPersonas={allPersonas}
       />
     </div>
   );

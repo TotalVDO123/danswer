@@ -326,34 +326,22 @@ class Persona__Tool(Base):
     tool_id: Mapped[int] = mapped_column(ForeignKey("tool.id"), primary_key=True)
 
 
-class StandardAnswer__StandardAnswerCategory(Base):
-    __tablename__ = "standard_answer__standard_answer_category"
-
-    standard_answer_id: Mapped[int] = mapped_column(
-        ForeignKey("standard_answer.id"), primary_key=True
-    )
-    standard_answer_category_id: Mapped[int] = mapped_column(
-        ForeignKey("standard_answer_category.id"), primary_key=True
-    )
-
-
-class SlackBotConfig__StandardAnswerCategory(Base):
-    __tablename__ = "slack_bot_config__standard_answer_category"
-
-    slack_bot_config_id: Mapped[int] = mapped_column(
-        ForeignKey("slack_bot_config.id"), primary_key=True
-    )
-    standard_answer_category_id: Mapped[int] = mapped_column(
-        ForeignKey("standard_answer_category.id"), primary_key=True
-    )
-
-
 class ChatMessage__StandardAnswer(Base):
     __tablename__ = "chat_message__standard_answer"
 
     chat_message_id: Mapped[int] = mapped_column(
         ForeignKey("chat_message.id"), primary_key=True
     )
+    standard_answer_id: Mapped[int] = mapped_column(
+        ForeignKey("standard_answer.id"), primary_key=True
+    )
+
+
+class Persona__StandardAnswer(Base):
+    __tablename__ = "persona__standard_answer"
+
+    persona_id: Mapped[int] = mapped_column(ForeignKey("persona.id", primary_key=True))
+
     standard_answer_id: Mapped[int] = mapped_column(
         ForeignKey("standard_answer.id"), primary_key=True
     )
@@ -1380,6 +1368,9 @@ class Persona(Base):
         secondary="persona__user_group",
         viewonly=True,
     )
+    standard_answers: Mapped[list["StandardAnswer"]] = relationship(
+        "StandardAnswer", secondary="persona__standard_answer", viewonly=True
+    )
 
     # Default personas loaded via yaml cannot have the same name
     __table_args__ = (
@@ -1436,11 +1427,6 @@ class SlackBotConfig(Base):
     )
 
     persona: Mapped[Persona | None] = relationship("Persona")
-    standard_answer_categories: Mapped[list["StandardAnswerCategory"]] = relationship(
-        "StandardAnswerCategory",
-        secondary=SlackBotConfig__StandardAnswerCategory.__table__,
-        back_populates="slack_bot_configs",
-    )
 
 
 class TaskQueueState(Base):
@@ -1668,23 +1654,6 @@ class TokenRateLimit__UserGroup(Base):
     )
 
 
-class StandardAnswerCategory(Base):
-    __tablename__ = "standard_answer_category"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String, unique=True)
-    standard_answers: Mapped[list["StandardAnswer"]] = relationship(
-        "StandardAnswer",
-        secondary=StandardAnswer__StandardAnswerCategory.__table__,
-        back_populates="categories",
-    )
-    slack_bot_configs: Mapped[list["SlackBotConfig"]] = relationship(
-        "SlackBotConfig",
-        secondary=SlackBotConfig__StandardAnswerCategory.__table__,
-        back_populates="standard_answer_categories",
-    )
-
-
 class StandardAnswer(Base):
     __tablename__ = "standard_answer"
 
@@ -1694,6 +1663,7 @@ class StandardAnswer(Base):
     active: Mapped[bool] = mapped_column(Boolean)
     match_regex: Mapped[bool] = mapped_column(Boolean)
     match_any_keywords: Mapped[bool] = mapped_column(Boolean)
+    apply_globally: Mapped[bool] = mapped_column(Boolean)
 
     __table_args__ = (
         Index(
@@ -1705,14 +1675,14 @@ class StandardAnswer(Base):
         ),
     )
 
-    categories: Mapped[list[StandardAnswerCategory]] = relationship(
-        "StandardAnswerCategory",
-        secondary=StandardAnswer__StandardAnswerCategory.__table__,
-        back_populates="standard_answers",
-    )
     chat_messages: Mapped[list[ChatMessage]] = relationship(
         "ChatMessage",
         secondary=ChatMessage__StandardAnswer.__table__,
+        back_populates="standard_answers",
+    )
+    personas: Mapped[list[Persona]] = relationship(
+        "Persona",
+        secondary=Persona__StandardAnswer.__table__,
         back_populates="standard_answers",
     )
 

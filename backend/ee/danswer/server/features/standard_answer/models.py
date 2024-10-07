@@ -2,50 +2,33 @@ import re
 from typing import Any
 
 from pydantic import BaseModel
-from pydantic import field_validator
 from pydantic import model_validator
 
-from danswer.db.models import StandardAnswer as StandardAnswerModel
-from danswer.db.models import StandardAnswerCategory as StandardAnswerCategoryModel
-
-
-class StandardAnswerCategoryCreationRequest(BaseModel):
-    name: str
-
-
-class StandardAnswerCategory(BaseModel):
-    id: int
-    name: str
-
-    @classmethod
-    def from_model(
-        cls, standard_answer_category: StandardAnswerCategoryModel
-    ) -> "StandardAnswerCategory":
-        return cls(
-            id=standard_answer_category.id,
-            name=standard_answer_category.name,
-        )
+from danswer.db.models import StandardAnswer as DbStandardAnswer
+from danswer.server.features.persona.models import PersonaSnapshot
 
 
 class StandardAnswer(BaseModel):
     id: int
     keyword: str
     answer: str
-    categories: list[StandardAnswerCategory]
     match_regex: bool
     match_any_keywords: bool
+    apply_globally: bool
+    personas: list[PersonaSnapshot] | None
 
     @classmethod
-    def from_model(cls, standard_answer_model: StandardAnswerModel) -> "StandardAnswer":
+    def from_model(cls, standard_answer_model: DbStandardAnswer) -> "StandardAnswer":
         return cls(
             id=standard_answer_model.id,
             keyword=standard_answer_model.keyword,
             answer=standard_answer_model.answer,
             match_regex=standard_answer_model.match_regex,
             match_any_keywords=standard_answer_model.match_any_keywords,
-            categories=[
-                StandardAnswerCategory.from_model(standard_answer_category_model)
-                for standard_answer_category_model in standard_answer_model.categories
+            apply_globally=standard_answer_model.apply_globally,
+            personas=[
+                PersonaSnapshot.from_model(persona)
+                for persona in standard_answer_model.personas
             ],
         )
 
@@ -53,18 +36,26 @@ class StandardAnswer(BaseModel):
 class StandardAnswerCreationRequest(BaseModel):
     keyword: str
     answer: str
-    categories: list[int]
     match_regex: bool
     match_any_keywords: bool
+    apply_globally: bool
+    persona_ids: list[int]
 
-    @field_validator("categories", mode="before")
-    @classmethod
-    def validate_categories(cls, value: list[int]) -> list[int]:
-        if len(value) < 1:
+    @model_validator(mode="after")
+    def validate_personas(self) -> Any:
+        personas_specified = len(self.persona_ids) > 0
+
+        if personas_specified and self.apply_globally:
             raise ValueError(
-                "At least one category must be attached to a standard answer"
+                "A standard answer can watch for all messages or for messages on one or more assistants, not both"
             )
-        return value
+
+        if not self.apply_globally and not personas_specified:
+            raise ValueError(
+                "No message watchers specified: choose at least one assistant or turn on watching for all messages"
+            )
+
+        return self
 
     @model_validator(mode="after")
     def validate_only_match_any_if_not_regex(self) -> Any:

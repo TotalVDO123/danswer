@@ -23,9 +23,11 @@ from danswer.db.models import SlackBotConfig
 from danswer.db.models import StandardAnswer as StandardAnswerModel
 from danswer.utils.logger import DanswerLoggingAdapter
 from danswer.utils.logger import setup_logger
-from ee.danswer.db.standard_answer import fetch_standard_answer_categories_by_names
 from ee.danswer.db.standard_answer import find_matching_standard_answers
-from ee.danswer.server.manage.models import StandardAnswer as PydanticStandardAnswer
+from ee.danswer.db.standard_answer import get_standard_answers_for_personas_or_global
+from ee.danswer.server.features.standard_answer.models import (
+    StandardAnswer as PydanticStandardAnswer,
+)
 
 logger = setup_logger()
 
@@ -48,7 +50,7 @@ def build_standard_answer_blocks(
 
 def oneoff_standard_answers(
     message: str,
-    slack_bot_categories: list[str],
+    persona_ids: list[int],
     db_session: Session,
 ) -> list[PydanticStandardAnswer]:
     """
@@ -56,17 +58,16 @@ def oneoff_standard_answers(
 
     Returns a list of matching StandardAnswers if found, otherwise None.
     """
-    configured_standard_answers = {
+    standard_answers_for_personas = {
         standard_answer
-        for category in fetch_standard_answer_categories_by_names(
-            slack_bot_categories, db_session=db_session
+        for standard_answer in get_standard_answers_for_personas_or_global(
+            persona_ids, db_session
         )
-        for standard_answer in category.standard_answers
     }
 
     matching_standard_answers = find_matching_standard_answers(
         query=message,
-        id_in=[answer.id for answer in configured_standard_answers],
+        id_in=[answer.id for answer in standard_answers_for_personas],
         db_session=db_session,
     )
 
@@ -99,16 +100,16 @@ def _handle_standard_answers(
         return False
 
     slack_thread_id = message_info.thread_to_respond
-    configured_standard_answer_categories = (
-        slack_bot_config.standard_answer_categories if slack_bot_config else []
-    )
-    configured_standard_answers = set(
-        [
-            standard_answer
-            for standard_answer_category in configured_standard_answer_categories
-            for standard_answer in standard_answer_category.standard_answers
-        ]
-    )
+
+    slack_bot_persona = slack_bot_config.persona
+    filter_to_personas = [slack_bot_persona.id] if slack_bot_persona is not None else []
+    applicable_standard_answer_ids = {
+        standard_answer.id
+        for standard_answer in get_standard_answers_for_personas_or_global(
+            filter_to_personas, db_session=db_session
+        )
+    }
+
     query_msg = message_info.thread_messages[-1]
 
     if slack_thread_id is None:
@@ -133,15 +134,17 @@ def _handle_standard_answers(
             ]
         )
 
-    usable_standard_answers = configured_standard_answers.difference(
+    usable_standard_answer_ids = applicable_standard_answer_ids.difference(
         used_standard_answer_ids
     )
 
     matching_standard_answers: list[tuple[StandardAnswerModel, str]] = []
-    if usable_standard_answers:
+    if usable_standard_answer_ids:
         matching_standard_answers = find_matching_standard_answers(
             query=query_msg.message,
-            id_in=[standard_answer.id for standard_answer in usable_standard_answers],
+            id_in=[
+                standard_answer_id for standard_answer_id in usable_standard_answer_ids
+            ],
             db_session=db_session,
         )
 

@@ -5,23 +5,19 @@ import { ErrorCallout } from "@/components/ErrorCallout";
 import { BackButton } from "@/components/BackButton";
 import { Text } from "@tremor/react";
 import { ClipboardIcon } from "@/components/icons/icons";
-import { StandardAnswerCategory } from "@/lib/types";
+import { Persona } from "@/app/admin/assistants/interfaces";
 
 async function Page() {
-  const standardAnswerCategoriesResponse = await fetchSS(
-    "/manage/admin/standard-answer/category"
-  );
-
-  if (!standardAnswerCategoriesResponse.ok) {
+  const allPersonaResponse = await fetchSS("/admin/persona");
+  if (!allPersonaResponse.ok) {
     return (
       <ErrorCallout
         errorTitle="Something went wrong :("
-        errorMsg={`Failed to fetch standard answer categories - ${await standardAnswerCategoriesResponse.text()}`}
+        errorMsg={`Failed to fetch personas - ${await allPersonaResponse.text()}`}
       />
     );
   }
-  const standardAnswerCategories =
-    (await standardAnswerCategoriesResponse.json()) as StandardAnswerCategory[];
+  const allPersonas = (await allPersonaResponse.json()) as Persona[];
 
   return (
     <div className="container mx-auto">
@@ -31,9 +27,7 @@ async function Page() {
         icon={<ClipboardIcon size={32} />}
       />
 
-      <StandardAnswerCreationForm
-        standardAnswerCategories={standardAnswerCategories}
-      />
+      <StandardAnswerCreationForm existingPersonas={allPersonas} />
     </div>
   );
 }

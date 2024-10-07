@@ -20,7 +20,6 @@ from danswer.search.models import SavedSearchSettings
 from danswer.server.features.persona.models import PersonaSnapshot
 from danswer.server.models import FullUserSnapshot
 from danswer.server.models import InvitedUserSnapshot
-from ee.danswer.server.manage.models import StandardAnswerCategory
 
 
 if TYPE_CHECKING:
@@ -146,8 +145,6 @@ class SlackBotConfigCreationRequest(BaseModel):
     # list of user emails
     follow_up_tags: list[str] | None = None
     response_type: SlackBotResponseType
-    # XXX this is going away soon
-    standard_answer_categories: list[int] = Field(default_factory=list)
 
     @field_validator("answer_filters", mode="before")
     @classmethod
@@ -171,8 +168,6 @@ class SlackBotConfig(BaseModel):
     persona: PersonaSnapshot | None
     channel_config: ChannelConfig
     response_type: SlackBotResponseType
-    # XXX this is going away soon
-    standard_answer_categories: list[StandardAnswerCategory]
     enable_auto_filters: bool
 
     @classmethod
@@ -190,11 +185,6 @@ class SlackBotConfig(BaseModel):
             ),
             channel_config=slack_bot_config_model.channel_config,
             response_type=slack_bot_config_model.response_type,
-            # XXX this is going away soon
-            standard_answer_categories=[
-                StandardAnswerCategory.from_model(standard_answer_category_model)
-                for standard_answer_category_model in slack_bot_config_model.standard_answer_categories
-            ],
             enable_auto_filters=slack_bot_config_model.enable_auto_filters,
         )
 

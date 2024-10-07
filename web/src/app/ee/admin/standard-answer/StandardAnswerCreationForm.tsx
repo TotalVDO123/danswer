@@ -1,14 +1,13 @@
 "use client";
 
 import { usePopup } from "@/components/admin/connectors/Popup";
-import { StandardAnswerCategory, StandardAnswer } from "@/lib/types";
+import { StandardAnswer } from "@/lib/types";
 import { Button, Card } from "@tremor/react";
 import { Form, Formik } from "formik";
 import { useRouter } from "next/navigation";
 import * as Yup from "yup";
 import {
   createStandardAnswer,
-  createStandardAnswerCategory,
   StandardAnswerCreationRequest,
   updateStandardAnswer,
 } from "./lib";
@@ -17,8 +16,13 @@ import {
   MarkdownFormField,
   BooleanFormField,
   SelectorFormField,
+  Label,
+  SubLabel,
 } from "@/components/admin/connectors/Field";
-import MultiSelectDropdown from "@/components/MultiSelectDropdown";
+import { SearchMultiSelectDropdown } from "@/components/Dropdown";
+import { Persona } from "@/app/admin/assistants/interfaces";
+import { PersonaSearchMultiSelectDropdownField } from "@/components/persona/PersonaDropdown";
+import { useState } from "react";
 
 function mapKeywordSelectToMatchAny(keywordSelect: "any" | "all"): boolean {
   return keywordSelect == "any";
@@ -29,11 +33,11 @@ function mapMatchAnyToKeywordSelect(matchAny: boolean): "any" | "all" {
 }
 
 export const StandardAnswerCreationForm = ({
-  standardAnswerCategories,
   existingStandardAnswer,
+  existingPersonas,
 }: {
-  standardAnswerCategories: StandardAnswerCategory[];
   existingStandardAnswer?: StandardAnswer;
+  existingPersonas: Persona[];
 }) => {
   const isUpdate = existingStandardAnswer !== undefined;
   const { popup, setPopup } = usePopup();
@@ -49,9 +53,6 @@ export const StandardAnswerCreationForm = ({
               ? existingStandardAnswer.keyword
               : "",
             answer: existingStandardAnswer ? existingStandardAnswer.answer : "",
-            categories: existingStandardAnswer
-              ? existingStandardAnswer.categories
-              : [],
             matchRegex: existingStandardAnswer
               ? existingStandardAnswer.match_regex
               : false,
@@ -60,6 +61,12 @@ export const StandardAnswerCreationForm = ({
                   existingStandardAnswer.match_any_keywords
                 )
               : "all",
+            applyGlobally: existingStandardAnswer
+              ? existingStandardAnswer.apply_globally
+              : false,
+            personas: existingStandardAnswer
+              ? existingStandardAnswer.personas
+              : [],
           }}
           validationSchema={Yup.object().shape({
             keyword: Yup.string()
@@ -67,9 +74,6 @@ export const StandardAnswerCreationForm = ({
               .max(255)
               .min(1),
             answer: Yup.string().required("Answer is required").min(1),
-            categories: Yup.array()
-              .required()
-              .min(1, "At least one category is required"),
           })}
           onSubmit={async (values, formikHelpers) => {
             formikHelpers.setSubmitting(true);
@@ -79,7 +83,7 @@ export const StandardAnswerCreationForm = ({
               matchAnyKeywords: mapKeywordSelectToMatchAny(
                 values.matchAnyKeywords
               ),
-              categories: values.categories.map((category) => category.id),
+              personaIds: values.personas.map((persona) => persona.id),
             };
 
             let response;
@@ -108,96 +112,125 @@ export const StandardAnswerCreationForm = ({
         >
           {({ isSubmitting, values, setFieldValue }) => (
             <Form>
-              {values.matchRegex ? (
-                <TextFormField
-                  name="keyword"
-                  label="Regex pattern"
-                  isCode
-                  tooltip="Triggers if the question matches this regex pattern (using Python `re.search()`)"
-                  placeholder="(?:it|support)\s*ticket"
-                />
-              ) : values.matchAnyKeywords == "any" ? (
-                <TextFormField
-                  name="keyword"
-                  label="Any of these keywords, separated by spaces"
-                  tooltip="A question must match these keywords in order to trigger the answer."
-                  placeholder="ticket problem issue"
-                  autoCompleteDisabled={true}
-                />
-              ) : (
-                <TextFormField
-                  name="keyword"
-                  label="All of these keywords, in any order, separated by spaces"
-                  tooltip="A question must match these keywords in order to trigger the answer."
-                  placeholder="it ticket"
-                  autoCompleteDisabled={true}
-                />
-              )}
-              <BooleanFormField
+              <fieldset className="border rounded p-4 w-full">
+                <legend className="px-1">Watch for</legend>
+                <div className="flex">
+                  <button
+                    type="button"
+                    onClick={() => setFieldValue("matchRegex", true)}
+                    className={`p-2 font-bold text-xs mr-3 ${
+                      values.matchRegex
+                        ? "rounded bg-background-900 text-text-100 underline"
+                        : "hover:underline bg-background-100"
+                    }`}
+                  >
+                    Regex pattern
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFieldValue("matchRegex", false)}
+                    className={`p-2 font-bold text-xs  ${
+                      !values.matchRegex
+                        ? "rounded bg-background-900 text-text-100 underline"
+                        : "hover:underline bg-background-100"
+                    }`}
+                  >
+                    Keywords
+                  </button>
+                </div>
+                <div className="mt-4 space-y-4 flex flex-col">
+                  {values.matchRegex ? (
+                    <TextFormField
+                      name="keyword"
+                      label="Regex pattern"
+                      isCode
+                      tooltip="Show this answer if the question matches this regex pattern (using Python `re.search()`)"
+                      placeholder="(?:it|support)\s*ticket"
+                    />
+                  ) : values.matchAnyKeywords == "any" ? (
+                    <TextFormField
+                      name="keyword"
+                      label="Any of these keywords, separated by spaces"
+                      tooltip="A question must match these keywords in order to show this answer."
+                      placeholder="ticket problem issue"
+                      autoCompleteDisabled={true}
+                    />
+                  ) : (
+                    <TextFormField
+                      name="keyword"
+                      label="All of these keywords, in any order, separated by spaces"
+                      tooltip="A question must match these keywords in order to show this answer."
+                      placeholder="it ticket"
+                      autoCompleteDisabled={true}
+                    />
+                  )}
+                  {values.matchRegex ? null : (
+                    <SelectorFormField
+                      defaultValue={`all`}
+                      label="Matching strategy"
+                      subtext="Choose how many keywords a user's question needs in order to show this answer."
+                      name="matchAnyKeywords"
+                      options={[
+                        {
+                          name: "All keywords must match",
+                          value: "all",
+                        },
+                        {
+                          name: "Any keywords can match",
+                          value: "any",
+                        },
+                      ]}
+                      onSelect={(selected) => {
+                        setFieldValue("matchAnyKeywords", selected);
+                      }}
+                    />
+                  )}
+                </div>
+              </fieldset>
+
+              {/* <BooleanFormField
                 subtext="Match a regex pattern instead of an exact keyword"
                 optional
                 label="Match regex"
                 name="matchRegex"
-              />
-              {values.matchRegex ? null : (
-                <SelectorFormField
-                  defaultValue={`all`}
-                  label="Keyword detection strategy"
-                  subtext="Choose whether to require the user's question to contain any or all of the keywords above to show this answer."
-                  name="matchAnyKeywords"
-                  options={[
-                    {
-                      name: "All keywords",
-                      value: "all",
-                    },
-                    {
-                      name: "Any keywords",
-                      value: "any",
-                    },
-                  ]}
-                  onSelect={(selected) => {
-                    setFieldValue("matchAnyKeywords", selected);
-                  }}
-                />
-              )}
+              /> */}
+
+              <fieldset className="border rounded p-4 w-full">
+                <legend className="px-1">Scope to</legend>
+                <div className="space-y-4 flex flex-col">
+                  {values.matchRegex ? (
+                    <BooleanFormField
+                      subtext="Attempt to match the above regex pattern against every user question Danswer receives from users in your instance"
+                      optional
+                      label="Watch every question"
+                      name="applyGlobally"
+                    />
+                  ) : (
+                    <BooleanFormField
+                      subtext="Attempt to match the above keywords against every question Danswer receives from users in your instance "
+                      optional
+                      label="Watch every message"
+                      name="applyGlobally"
+                    />
+                  )}
+                  {values.applyGlobally ? null : (
+                    <PersonaSearchMultiSelectDropdownField
+                      name="personas"
+                      label="Watch for messages to these Assistants"
+                      subtext=" Select the Assistants you want this Standard Answer to apply to"
+                      existingPersonas={existingPersonas}
+                      selectedPersonas={values.personas}
+                    />
+                  )}
+                </div>
+              </fieldset>
+
               <div className="w-full">
                 <MarkdownFormField
                   name="answer"
                   label="Answer"
                   placeholder="The answer in Markdown. Example: If you need any help from the IT team, please email internalsupport@company.com"
-                />
-              </div>
-              <div className="w-4/12">
-                <MultiSelectDropdown
-                  name="categories"
-                  label="Categories:"
-                  onChange={(selected_options) => {
-                    const selected_categories = selected_options.map(
-                      (option) => {
-                        return { id: Number(option.value), name: option.label };
-                      }
-                    );
-                    setFieldValue("categories", selected_categories);
-                  }}
-                  creatable={true}
-                  onCreate={async (created_name) => {
-                    const response = await createStandardAnswerCategory({
-                      name: created_name,
-                    });
-                    const newCategory = await response.json();
-                    return {
-                      label: newCategory.name,
-                      value: newCategory.id.toString(),
-                    };
-                  }}
-                  options={standardAnswerCategories.map((category) => ({
-                    label: category.name,
-                    value: category.id.toString(),
-                  }))}
-                  initialSelectedOptions={values.categories.map((category) => ({
-                    label: category.name,
-                    value: category.id.toString(),
-                  }))}
                 />
               </div>
               <div className="p-4 flex">
