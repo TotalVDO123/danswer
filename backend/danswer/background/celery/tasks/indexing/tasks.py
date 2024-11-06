@@ -185,7 +185,7 @@ def check_for_indexing(self: Task, *, tenant_id: str | None) -> int | None:
             "Soft time limit exceeded, task is being terminated gracefully."
         )
     except Exception:
-        task_logger.exception(f"Unexpected exception: tenant={tenant_id}")
+        task_logger.exception("Unexpected exception during indexing check")
     finally:
         if lock_beat.owned():
             lock_beat.release()
@@ -371,7 +371,6 @@ def try_creating_indexing_task(
         redis_connector_index.set_fence(payload)
         task_logger.exception(
             f"Unexpected exception: "
-            f"tenant={tenant_id} "
             f"cc_pair={cc_pair.id} "
             f"search_settings={search_settings.id}"
         )
@@ -393,7 +392,6 @@ def connector_indexing_proxy_task(
     """celery tasks are forked, but forking is unstable.  This proxies work to a spawned task."""
     task_logger.info(
         f"Indexing proxy - starting: attempt={index_attempt_id} "
-        f"tenant={tenant_id} "
         f"cc_pair={cc_pair_id} "
         f"search_settings={search_settings_id}"
     )
@@ -412,7 +410,6 @@ def connector_indexing_proxy_task(
     if not job:
         task_logger.info(
             f"Indexing proxy - spawn failed: attempt={index_attempt_id} "
-            f"tenant={tenant_id} "
             f"cc_pair={cc_pair_id} "
             f"search_settings={search_settings_id}"
         )
@@ -420,7 +417,6 @@ def connector_indexing_proxy_task(
 
     task_logger.info(
         f"Indexing proxy - spawn succeeded: attempt={index_attempt_id} "
-        f"tenant={tenant_id} "
         f"cc_pair={cc_pair_id} "
         f"search_settings={search_settings_id}"
     )
@@ -445,7 +441,6 @@ def connector_indexing_proxy_task(
             task_logger.error(
                 f"Indexing proxy - spawned task exceptioned: "
                 f"attempt={index_attempt_id} "
-                f"tenant={tenant_id} "
                 f"cc_pair={cc_pair_id} "
                 f"search_settings={search_settings_id} "
                 f"error={job.exception()}"
@@ -456,7 +451,6 @@ def connector_indexing_proxy_task(
 
     task_logger.info(
         f"Indexing proxy - finished: attempt={index_attempt_id} "
-        f"tenant={tenant_id} "
         f"cc_pair={cc_pair_id} "
         f"search_settings={search_settings_id}"
     )
@@ -644,7 +638,6 @@ def connector_indexing_task(
 
     logger.info(
         f"Indexing spawned task finished: attempt={index_attempt_id} "
-        f"tenant={tenant_id} "
         f"cc_pair={cc_pair_id} "
         f"search_settings={search_settings_id}"
     )

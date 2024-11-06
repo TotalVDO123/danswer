@@ -118,11 +118,10 @@ class DynamicTenantScheduler(PersistentScheduler):
                 logger.info("Schedule update completed successfully")
             else:
                 logger.info("Schedule is up to date, no changes needed")
-
-        except (AttributeError, KeyError):
-            logger.exception("Failed to process task configuration")
-        except Exception:
-            logger.exception("Unexpected error updating tenant tasks")
+        except (AttributeError, KeyError) as e:
+            logger.exception(f"Failed to process task configuration: {str(e)}")
+        except Exception as e:
+            logger.exception(f"Unexpected error updating tenant tasks: {str(e)}")
 
     def _should_update_schedule(
         self, current_schedule: dict, new_schedule: dict
