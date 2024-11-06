@@ -39,7 +39,6 @@ from danswer.natural_language_processing.search_nlp_models import warm_up_bi_enc
 from danswer.natural_language_processing.search_nlp_models import warm_up_cross_encoder
 from danswer.search.models import SavedSearchSettings
 from danswer.search.retrieval.search_runner import download_nltk_data
-from danswer.seeding.load_docs import seed_initial_documents
 from danswer.server.manage.llm.models import LLMProviderUpsertRequest
 from danswer.server.settings.store import load_settings
 from danswer.server.settings.store import store_settings
@@ -148,7 +147,7 @@ def setup_danswer(db_session: Session, tenant_id: str | None) -> None:
     # update multipass indexing setting based on GPU availability
     update_default_multipass_indexing(db_session)
 
-    seed_initial_documents(db_session, tenant_id)
+    # seed_initial_documents(db_session, tenant_id)
 
 
 def translate_saved_search_settings(db_session: Session) -> None:
