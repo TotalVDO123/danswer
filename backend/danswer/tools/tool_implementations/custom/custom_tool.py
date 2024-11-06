@@ -12,8 +12,10 @@ from typing import List
 import requests
 from langchain_core.messages import HumanMessage
 from langchain_core.messages import SystemMessage
-from pydantic import BaseModel
 
+from danswer.chat.chat_utils import llm_doc_from_inference_section
+from danswer.chat.models import LlmDoc
+from danswer.chat.models import SectionRelevancePiece
 from danswer.configs.constants import FileOrigin
 from danswer.db.engine import get_session_with_tenant
 from danswer.file_store.file_store import get_default_file_store
@@ -22,7 +24,12 @@ from danswer.file_store.models import InMemoryChatFile
 from danswer.key_value_store.interface import JSON_ro
 from danswer.llm.answering.models import PreviousMessage
 from danswer.llm.answering.prompts.build import AnswerPromptBuilder
+from danswer.llm.answering.prune_and_merge import prune_and_merge_sections
 from danswer.llm.interfaces import LLM
+from danswer.search.models import DocumentSource
+from danswer.search.models import IndexFilters
+from danswer.search.models import InferenceChunk
+from danswer.search.models import InferenceSection
 from danswer.tools.base_tool import BaseTool
 from danswer.tools.message import ToolCallSummary
 from danswer.tools.models import CHAT_SESSION_ID_PLACEHOLDER
@@ -42,6 +49,12 @@ from danswer.tools.tool_implementations.custom.custom_tool_prompts import (
     TOOL_ARG_USER_PROMPT,
 )
 from danswer.tools.tool_implementations.custom.custom_tool_prompts import USE_TOOL
+from danswer.tools.tool_implementations.custom.models import CUSTOM_TOOL_RESPONSE_ID
+from danswer.tools.tool_implementations.custom.models import CustomToolCallSummary
+from danswer.tools.tool_implementations.custom.models import CustomToolFileResponse
+from danswer.tools.tool_implementations.custom.models import CustomToolResponseType
+from danswer.tools.tool_implementations.custom.models import CustomToolSearchResponse
+from danswer.tools.tool_implementations.custom.models import CustomToolSearchResult
 from danswer.tools.tool_implementations.custom.openapi_parsing import MethodSpec
 from danswer.tools.tool_implementations.custom.openapi_parsing import (
     openapi_to_method_specs,
@@ -54,23 +67,25 @@ from danswer.tools.tool_implementations.custom.openapi_parsing import (
 from danswer.tools.tool_implementations.custom.prompt import (
     build_custom_image_generation_user_prompt,
 )
+from danswer.tools.tool_implementations.search.search_tool import (
+    FINAL_CONTEXT_DOCUMENTS_ID,
+)
+from danswer.tools.tool_implementations.search.search_tool import (
+    SEARCH_RESPONSE_SUMMARY_ID,
+)
+from danswer.tools.tool_implementations.search.search_tool import SearchResponseSummary
+from danswer.tools.tool_implementations.search.search_tool import (
+    SECTION_RELEVANCE_LIST_ID,
+)
+from danswer.tools.tool_implementations.search.search_utils import llm_doc_to_dict
+from danswer.tools.tool_implementations.search_like_tool_utils import (
+    build_next_prompt_for_search_like_tool,
+)
 from danswer.utils.headers import header_list_to_header_dict
 from danswer.utils.headers import HeaderItemDict
 from danswer.utils.logger import setup_logger
 
 logger = setup_logger()
-
-CUSTOM_TOOL_RESPONSE_ID = "custom_tool_response"
-
-
-class CustomToolFileResponse(BaseModel):
-    file_ids: List[str]  # References to saved images or CSVs
-
-
-class CustomToolCallSummary(BaseModel):
-    tool_name: str
-    response_type: str  # e.g., 'json', 'image', 'csv', 'graph'
-    tool_result: Any  # The response data
 
 
 class CustomTool(BaseTool):
@@ -80,6 +95,7 @@ class CustomTool(BaseTool):
         base_url: str,
         custom_headers: list[HeaderItemDict] | None = None,
     ) -> None:
+        print("------\n\n\n-----\n\nCUSTOM TOOL INIT")
         self._base_url = base_url
         self._method_spec = method_spec
         self._tool_definition = self._method_spec.to_tool_definition()
@@ -112,9 +128,26 @@ class CustomTool(BaseTool):
     ) -> str | list[str | dict[str, Any]]:
         response = cast(CustomToolCallSummary, args[0].response)
 
-        if response.response_type == "image" or response.response_type == "csv":
-            image_response = cast(CustomToolFileResponse, response.tool_result)
-            return json.dumps({"file_ids": image_response.file_ids})
+        if (
+            response.response_type == CustomToolResponseType.IMAGE
+            or response.response_type == CustomToolResponseType.CSV
+        ):
+            file_response = cast(CustomToolFileResponse, response.tool_result)
+            return json.dumps({"file_ids": file_response.file_ids})
+
+        elif response.response_type == CustomToolResponseType.SEARCH:
+            # Build message content for search results
+            final_docs_response = next(
+                arg for arg in args if arg.id == FINAL_CONTEXT_DOCUMENTS_ID
+            )
+            final_docs = cast(List[LlmDoc], final_docs_response.response)
+            return json.dumps(
+                {
+                    "search_results": [
+                        llm_doc_to_dict(doc, ind) for ind, doc in enumerate(final_docs)
+                    ]
+                }
+            )
 
         # For JSON or other responses, return as-is
         return json.dumps(response.tool_result)
@@ -218,7 +251,81 @@ class CustomTool(BaseTool):
 
     """Actual execution of the tool"""
 
+    def _handle_search_like_tool_response(
+        self, tool_result: CustomToolSearchResponse
+    ) -> Generator[ToolResponse, None, None]:
+        # Create SearchResponseSummary
+        search_response_summary = SearchResponseSummary(
+            rephrased_query=None,
+            top_sections=[],  # Will be filled after processing the results
+            predicted_flow=None,
+            predicted_search=None,
+            final_filters=IndexFilters(access_control_list=None),  # Dummy filters
+            recency_bias_multiplier=1.0,
+        )
+
+        yield ToolResponse(
+            id=SEARCH_RESPONSE_SUMMARY_ID,
+            response=search_response_summary,
+        )
+
+        # Convert results to InferenceSections
+        inference_sections = []
+        for result in tool_result.results:
+            chunk = InferenceChunk(
+                document_id=result.document_id,
+                chunk_id=str(uuid.uuid4()),
+                content=result.content,
+                source_type=DocumentSource(result.source_type),
+                semantic_identifier=result.semantic_identifier,
+                blurb=result.blurb,
+                category=None,
+                link=result.link,
+                score=result.score,
+                metadata={},
+            )
+            section = InferenceSection(
+                center_chunk=chunk,
+                additional_chunks_above=[],
+                additional_chunks_below=[],
+                is_unified=False,
+            )
+            inference_sections.append(section)
+
+        # Build selected sections for relevance (assuming all are relevant)
+        selected_sections = [
+            SectionRelevancePiece(
+                relevant=True,
+                document_id=section.center_chunk.document_id,
+                chunk_id=section.center_chunk.chunk_id,
+            )
+            for section in inference_sections
+        ]
+
+        yield ToolResponse(
+            id=SECTION_RELEVANCE_LIST_ID,
+            response=selected_sections,
+        )
+
+        # Prune and merge sections
+        final_context_sections = prune_and_merge_sections(
+            sections=inference_sections,
+            section_relevance_list=None,
+            prompt_config=self.prompt_config,
+            llm_config=self.llm.config,
+            question="",  # Provide the query if available
+            contextual_pruning_config=self.contextual_pruning_config,
+        )
+
+        llm_docs = [
+            llm_doc_from_inference_section(section)
+            for section in final_context_sections
+        ]
+
+        yield ToolResponse(id=FINAL_CONTEXT_DOCUMENTS_ID, response=llm_docs)
+
     def run(self, **kwargs: Any) -> Generator[ToolResponse, None, None]:
+        print("RUNNING")
         request_body = kwargs.get(REQUEST_BODY)
 
         path_params = {}
@@ -253,24 +360,44 @@ class CustomTool(BaseTool):
                 response.content, content_type
             )
             tool_result = CustomToolFileResponse(file_ids=file_ids)
-            response_type = "image"
+            response_type = CustomTool
+
+        elif content_type == "application/json":
+            tool_result = response.json()
+            # Check if the response is a search result
+            if isinstance(tool_result, list) and all(
+                "content" in item for item in tool_result
+            ):
+                # Process as search results
+                search_results = [
+                    CustomToolSearchResult(**item) for item in tool_result
+                ]
+                tool_result = CustomToolSearchResponse(results=search_results)
+                response_type = CustomToolResponseType.SEARCH
+            else:
+                # Process as generic JSON
+                response_type = CustomToolResponseType.JSON
 
         else:
+            # Default to JSON if content type is not specified
             tool_result = response.json()
-            response_type = "json"
+            response_type = CustomToolResponseType.JSON
 
         logger.info(
             f"Returning tool response for {self._name} with type {response_type}"
         )
+        if response_type == CustomToolResponseType.SEARCH:
+            yield from self._handle_search_like_tool_response(tool_result)
 
-        yield ToolResponse(
-            id=CUSTOM_TOOL_RESPONSE_ID,
-            response=CustomToolCallSummary(
-                tool_name=self._name,
-                response_type=response_type,
-                tool_result=tool_result,
-            ),
-        )
+        else:
+            yield ToolResponse(
+                id=CUSTOM_TOOL_RESPONSE_ID,
+                response=CustomToolCallSummary(
+                    tool_name=self._name,
+                    response_type=response_type,
+                    tool_result=tool_result,
+                ),
+            )
 
     def build_next_prompt(
         self,
@@ -281,8 +408,20 @@ class CustomTool(BaseTool):
     ) -> AnswerPromptBuilder:
         response = cast(CustomToolCallSummary, tool_responses[0].response)
 
+        if response.response_type == CustomToolResponseType.SEARCH:
+            return build_next_prompt_for_search_like_tool(
+                prompt_builder=prompt_builder,
+                tool_call_summary=tool_call_summary,
+                tool_responses=tool_responses,
+                using_tool_calling_llm=using_tool_calling_llm,
+                answer_style_config=self.answer_style_config,
+                prompt_config=self.prompt_config,
+            )
         # Handle non-file responses using parent class behavior
-        if response.response_type not in ["image", "csv"]:
+        if response.response_type not in [
+            CustomToolResponseType.IMAGE,
+            CustomToolResponseType.CSV,
+        ]:
             return super().build_next_prompt(
                 prompt_builder,
                 tool_call_summary,
@@ -293,7 +432,7 @@ class CustomTool(BaseTool):
         # Handle image and CSV file responses
         file_type = (
             ChatFileType.IMAGE
-            if response.response_type == "image"
+            if response.response_type == CustomToolResponseType.IMAGE
             else ChatFileType.CSV
         )
 

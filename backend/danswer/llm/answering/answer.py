@@ -167,6 +167,8 @@ class Answer:
 
     def _get_response(self, llm_calls: list[LLMCall]) -> AnswerStream:
         current_llm_call = llm_calls[-1]
+        print("TOOLs")
+        print(current_llm_call.tools)
 
         # handle the case where no decision has to be made; we simply run the tool
         if (
