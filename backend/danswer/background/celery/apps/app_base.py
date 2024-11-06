@@ -1,6 +1,7 @@
 import logging
 import multiprocessing
 import time
+from contextvars import ContextVar
 from typing import Any
 
 import requests
@@ -8,6 +9,8 @@ import sentry_sdk
 from celery import Task
 from celery.app import trace
 from celery.exceptions import WorkerShutdown
+from celery.signals import task_postrun
+from celery.signals import task_prerun
 from celery.states import READY_STATES
 from celery.utils.log import get_task_logger
 from celery.worker import strategy  # type: ignore
@@ -33,7 +36,7 @@ from danswer.utils.logger import PlainFormatter
 from danswer.utils.logger import setup_logger
 from shared_configs.configs import MULTI_TENANT
 from shared_configs.configs import SENTRY_DSN
-
+from shared_configs.configs import TENANT_ID_PREFIX
 
 logger = setup_logger()
 
@@ -54,8 +57,8 @@ def on_task_prerun(
     sender: Any | None = None,
     task_id: str | None = None,
     task: Task | None = None,
-    args: tuple | None = None,
-    kwargs: dict | None = None,
+    args: tuple[Any, ...] | None = None,
+    kwargs: dict[str, Any] | None = None,
     **kwds: Any,
 ) -> None:
     pass
@@ -332,26 +335,32 @@ def on_worker_shutdown(sender: Any, **kwargs: Any) -> None:
 
 
 def on_setup_logging(
-    loglevel: Any, logfile: Any, format: Any, colorize: Any, **kwargs: Any
+    loglevel: int,
+    logfile: str | None,
+    format: str,
+    colorize: bool,
+    **kwargs: Any,
 ) -> None:
-    # TODO: could unhardcode format and colorize and accept these as options from
-    # celery's config
-
-    # reformats the root logger
+    # Clear existing handlers to avoid duplicate logs
     root_logger = logging.getLogger()
+    root_logger.handlers = []
 
-    root_handler = logging.StreamHandler()  # Set up a handler for the root logger
+    # Define the log format
+    log_format = "%(levelname)-8s %(asctime)s %(name)-40s %(filename)15s:%(lineno)-4d: %(message)s"
+
+    # Set up the root handler
+    root_handler = logging.StreamHandler()
     root_formatter = ColoredFormatter(
-        "%(asctime)s %(filename)30s %(lineno)4s: %(message)s",
+        log_format,
         datefmt="%m/%d/%Y %I:%M:%S %p",
     )
     root_handler.setFormatter(root_formatter)
-    root_logger.addHandler(root_handler)  # Apply the handler to the root logger
+    root_logger.addHandler(root_handler)
 
     if logfile:
         root_file_handler = logging.FileHandler(logfile)
         root_file_formatter = PlainFormatter(
-            "%(asctime)s %(filename)30s %(lineno)4s: %(message)s",
+            log_format,
             datefmt="%m/%d/%Y %I:%M:%S %p",
         )
         root_file_handler.setFormatter(root_file_formatter)
@@ -359,19 +368,23 @@ def on_setup_logging(
 
     root_logger.setLevel(loglevel)
 
-    # reformats celery's task logger
+    # Configure the task logger
+    task_logger.handlers = []
+
+    task_handler = logging.StreamHandler()
+    task_handler.addFilter(TenantContextFilter())  # Apply filter here
     task_formatter = CeleryTaskColoredFormatter(
-        "%(asctime)s %(filename)30s %(lineno)4s: %(message)s",
+        log_format,
         datefmt="%m/%d/%Y %I:%M:%S %p",
     )
-    task_handler = logging.StreamHandler()  # Set up a handler for the task logger
     task_handler.setFormatter(task_formatter)
-    task_logger.addHandler(task_handler)  # Apply the handler to the task logger
+    task_logger.addHandler(task_handler)
 
     if logfile:
         task_file_handler = logging.FileHandler(logfile)
+        task_file_handler.addFilter(TenantContextFilter())  # Apply filter here
         task_file_formatter = CeleryTaskPlainFormatter(
-            "%(asctime)s %(filename)30s %(lineno)4s: %(message)s",
+            log_format,
             datefmt="%m/%d/%Y %I:%M:%S %p",
         )
         task_file_handler.setFormatter(task_file_formatter)
@@ -380,10 +393,51 @@ def on_setup_logging(
     task_logger.setLevel(loglevel)
     task_logger.propagate = False
 
-    # hide celery task received spam
-    # e.g. "Task check_for_pruning[a1e96171-0ba8-4e00-887b-9fbf7442eab3] received"
+    # Hide celery task received and succeeded/failed messages
     strategy.logger.setLevel(logging.WARNING)
-
-    # hide celery task succeeded/failed spam
-    # e.g. "Task check_for_pruning[a1e96171-0ba8-4e00-887b-9fbf7442eab3] succeeded in 0.03137450001668185s: None"
     trace.logger.setLevel(logging.WARNING)
+
+
+class TenantContextFilter(logging.Filter):
+
+    """Logging filter to inject tenant ID into the logger's name."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if not MULTI_TENANT:
+            return True
+
+        tenant_id = current_tenant.get()
+        if tenant_id:
+            record.name = f"[tenant:{tenant_id[len(TENANT_ID_PREFIX):len(TENANT_ID_PREFIX)+5]}] {record.name}"
+        return True
+
+
+# Global context variable for tenant_id
+current_tenant = ContextVar("current_tenant", default=None)
+
+
+@task_prerun.connect
+def set_tenant_id(
+    sender: Any | None = None,
+    task_id: str | None = None,
+    task: Task | None = None,
+    args: tuple[Any, ...] | None = None,
+    kwargs: dict[str, Any] | None = None,
+    **other_kwargs: Any,
+) -> None:
+    """Signal handler to set tenant ID in context var before task starts."""
+    tenant_id = kwargs.get("tenant_id") if kwargs else None
+    current_tenant.set(tenant_id)
+
+
+@task_postrun.connect
+def reset_tenant_id(
+    sender: Any | None = None,
+    task_id: str | None = None,
+    task: Task | None = None,
+    args: tuple[Any, ...] | None = None,
+    kwargs: dict[str, Any] | None = None,
+    **other_kwargs: Any,
+) -> None:
+    """Signal handler to reset tenant ID in context var after task ends."""
+    current_tenant.set(None)
