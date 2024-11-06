@@ -51,9 +51,9 @@ class DynamicTenantScheduler(PersistentScheduler):
     def _update_tenant_tasks(self) -> None:
         logger.info("Starting task update process")
         try:
-            logger.info("Fetching all tenant IDs")
+            logger.info("Fetching all IDs")
             tenant_ids = get_all_tenant_ids()
-            logger.info(f"Found {len(tenant_ids)} items")
+            logger.info(f"Found {len(tenant_ids)} IDs")
 
             logger.info("Fetching tasks to schedule")
             tasks_to_schedule = fetch_versioned_implementation(
