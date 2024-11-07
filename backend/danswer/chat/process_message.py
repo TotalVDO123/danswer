@@ -89,6 +89,7 @@ from danswer.tools.tool_implementations.custom.custom_tool import (
     CUSTOM_TOOL_RESPONSE_ID,
 )
 from danswer.tools.tool_implementations.custom.custom_tool import CustomToolCallSummary
+from danswer.tools.tool_implementations.custom.models import CustomToolResponseType
 from danswer.tools.tool_implementations.images.image_generation_tool import (
     IMAGE_GENERATION_RESPONSE_ID,
 )
@@ -173,7 +174,6 @@ def _handle_search_tool_response_summary(
         ]
     else:
         reference_db_search_docs = selected_search_docs
-
     response_docs = [
         translate_db_search_doc_to_server_search_doc(db_search_doc)
         for db_search_doc in reference_db_search_docs
@@ -681,6 +681,8 @@ def stream_chat_message_objects(
                                 custom_tool_additional_headers or {}
                             )
                         ),
+                        answer_style_config=answer_style_config,
+                        prompt_config=prompt_config,
                     ),
                 )
 
@@ -695,7 +697,6 @@ def stream_chat_message_objects(
         document_pruning_config.using_tool_message = explicit_tool_calling_supported(
             llm_provider, llm_model_name
         )
-
         # LLM prompt building, response capturing, etc.
         answer = Answer(
             is_connected=is_connected,
@@ -746,6 +747,7 @@ def stream_chat_message_objects(
                             else False
                         ),
                     )
+
                     yield qa_docs_response
                 elif packet.id == SECTION_RELEVANCE_LIST_ID:
                     relevance_sections = packet.response
@@ -802,15 +804,17 @@ def stream_chat_message_objects(
                     custom_tool_response = cast(CustomToolCallSummary, packet.response)
 
                     if (
-                        custom_tool_response.response_type == "image"
-                        or custom_tool_response.response_type == "csv"
+                        custom_tool_response.response_type == CustomToolResponseType.CSV
+                        or custom_tool_response.response_type
+                        == CustomToolResponseType.IMAGE
                     ):
                         file_ids = custom_tool_response.tool_result.file_ids
                         ai_message_files = [
                             FileDescriptor(
                                 id=str(file_id),
                                 type=ChatFileType.IMAGE
-                                if custom_tool_response.response_type == "image"
+                                if custom_tool_response.response_type
+                                == CustomToolResponseType.IMAGE
                                 else ChatFileType.CSV,
                             )
                             for file_id in file_ids
@@ -818,6 +822,15 @@ def stream_chat_message_objects(
                         yield FileChatDisplay(
                             file_ids=[str(file_id) for file_id in file_ids]
                         )
+                    elif (
+                        custom_tool_response.response_type
+                        == CustomToolResponseType.SEARCH
+                    ):
+                        pass
+                        # yield SearchToolResponse(
+                        #     response=custom_tool_response.tool_result,
+                        #     tool_name=custom_tool_response.tool_name,
+                        # )
                     else:
                         yield CustomToolResponse(
                             response=custom_tool_response.tool_result,
