@@ -22,7 +22,9 @@ from danswer.file_store.file_store import get_default_file_store
 from danswer.file_store.models import ChatFileType
 from danswer.file_store.models import InMemoryChatFile
 from danswer.key_value_store.interface import JSON_ro
+from danswer.llm.answering.models import AnswerStyleConfig
 from danswer.llm.answering.models import PreviousMessage
+from danswer.llm.answering.models import PromptConfig
 from danswer.llm.answering.prompts.build import AnswerPromptBuilder
 from danswer.llm.interfaces import LLM
 from danswer.search.models import DocumentSource
@@ -93,6 +95,8 @@ class CustomTool(BaseTool):
         method_spec: MethodSpec,
         base_url: str,
         custom_headers: list[HeaderItemDict] | None = None,
+        answer_style_config: AnswerStyleConfig | None = None,
+        prompt_config: PromptConfig | None = None,
     ) -> None:
         print("------\n\n\n-----\n\nCUSTOM TOOL INIT")
         self._base_url = base_url
@@ -104,6 +108,8 @@ class CustomTool(BaseTool):
         self.headers = (
             header_list_to_header_dict(custom_headers) if custom_headers else {}
         )
+        self.answer_style_config = answer_style_config
+        self.prompt_config = prompt_config
 
     @property
     def name(self) -> str:
@@ -266,21 +272,6 @@ class CustomTool(BaseTool):
     def _handle_search_like_tool_response(
         self, tool_result: CustomToolSearchResponse
     ) -> Generator[ToolResponse, None, None]:
-        # Create SearchResponseSummary
-        search_response_summary = SearchResponseSummary(
-            rephrased_query=None,
-            top_sections=[],  # Will be filled after processing the results
-            predicted_flow=None,
-            predicted_search=None,
-            final_filters=IndexFilters(access_control_list=None),  # Dummy filters
-            recency_bias_multiplier=1.0,
-        )
-
-        yield ToolResponse(
-            id=SEARCH_RESPONSE_SUMMARY_ID,
-            response=search_response_summary,
-        )
-
         # Convert results to InferenceSections
         inference_sections = []
         for result in tool_result.results:
@@ -288,7 +279,7 @@ class CustomTool(BaseTool):
                 document_id=result.document_id,
                 chunk_id=0,
                 content=result.content,
-                source_type=DocumentSource(result.source_type),
+                source_type=DocumentSource.CUSTOM_TOOL,
                 semantic_identifier=result.semantic_identifier,
                 blurb=result.blurb,
                 source_links={},
@@ -297,7 +288,7 @@ class CustomTool(BaseTool):
                 boost=1,  # Default boost value
                 recency_bias=1.0,  # Default recency bias
                 hidden=False,
-                score=result.score,
+                score=1.0,
                 metadata={},
                 match_highlights=[],  # Empty list for match highlights
                 updated_at=result.updated_at if hasattr(result, "updated_at") else None,
@@ -309,6 +300,20 @@ class CustomTool(BaseTool):
             )
             inference_sections.append(section)
 
+        # Create SearchResponseSummary
+        search_response_summary = SearchResponseSummary(
+            rephrased_query=None,
+            top_sections=inference_sections,  # Will be filled after processing the results
+            predicted_flow=None,
+            predicted_search=None,
+            final_filters=IndexFilters(access_control_list=None),  # Dummy filters
+            recency_bias_multiplier=1.0,
+        )
+
+        yield ToolResponse(
+            id=SEARCH_RESPONSE_SUMMARY_ID,
+            response=search_response_summary,
+        )
         # Build selected sections for relevance (assuming all are relevant)
         selected_sections = [
             SectionRelevancePiece(
@@ -323,16 +328,6 @@ class CustomTool(BaseTool):
             id=SECTION_RELEVANCE_LIST_ID,
             response=selected_sections,
         )
-
-        # Prune and merge sections
-        # final_context_sections = prune_and_merge_sections(
-        #     sections=inference_sections,
-        #     section_relevance_list=None,
-        #     prompt_config=self.prompt_config,
-        #     llm_config=self.llm.config,
-        #     question="",  # Provide the query if available
-        #     contextual_pruning_config=self.contextual_pruning_config,
-        # )
 
         llm_docs = [
             llm_doc_from_inference_section(section) for section in inference_sections
@@ -422,9 +417,9 @@ class CustomTool(BaseTool):
         tool_responses: list[ToolResponse],
         using_tool_calling_llm: bool,
     ) -> AnswerPromptBuilder:
-        response = cast(CustomToolCallSummary, tool_responses[0].response)
+        response = tool_responses[0].response
 
-        if isinstance(response, CustomToolCallSummary):
+        if isinstance(response, SearchResponseSummary):
             return build_next_prompt_for_search_like_tool(
                 prompt_builder=prompt_builder,
                 tool_call_summary=tool_call_summary,
@@ -433,7 +428,6 @@ class CustomTool(BaseTool):
                 answer_style_config=self.answer_style_config,
                 prompt_config=self.prompt_config,
             )
-
         # Handle non-file responses using parent class behavior
         if response.response_type not in [
             CustomToolResponseType.IMAGE,
@@ -509,6 +503,8 @@ def build_custom_tools_from_openapi_schema_and_headers(
     openapi_schema: dict[str, Any],
     custom_headers: list[HeaderItemDict] | None = None,
     dynamic_schema_info: DynamicSchemaInfo | None = None,
+    answer_style_config: AnswerStyleConfig | None = None,
+    prompt_config: PromptConfig | None = None,
 ) -> list[CustomTool]:
     if dynamic_schema_info:
         # Process dynamic schema information
@@ -527,7 +523,8 @@ def build_custom_tools_from_openapi_schema_and_headers(
     url = openapi_to_url(openapi_schema)
     method_specs = openapi_to_method_specs(openapi_schema)
     return [
-        CustomTool(method_spec, url, custom_headers) for method_spec in method_specs
+        CustomTool(method_spec, url, custom_headers, answer_style_config, prompt_config)
+        for method_spec in method_specs
     ]
 
 

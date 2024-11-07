@@ -158,7 +158,9 @@ def _handle_search_tool_response_summary(
     selected_search_docs: list[DbSearchDoc] | None,
     dedupe_docs: bool = False,
 ) -> tuple[QADocsResponse, list[DbSearchDoc], list[int] | None]:
+    print("handling search tool response summary")
     response_sumary = cast(SearchResponseSummary, packet.response)
+    print("response summary is ", response_sumary.__dict__)
 
     dropped_inds = None
     if not selected_search_docs:
@@ -174,7 +176,7 @@ def _handle_search_tool_response_summary(
         ]
     else:
         reference_db_search_docs = selected_search_docs
-
+    print("search docs are ", reference_db_search_docs)
     response_docs = [
         translate_db_search_doc_to_server_search_doc(db_search_doc)
         for db_search_doc in reference_db_search_docs
@@ -682,6 +684,8 @@ def stream_chat_message_objects(
                                 custom_tool_additional_headers or {}
                             )
                         ),
+                        answer_style_config=answer_style_config,
+                        prompt_config=prompt_config,
                     ),
                 )
 
@@ -731,7 +735,9 @@ def stream_chat_message_objects(
 
         for packet in answer.processed_streamed_output:
             if isinstance(packet, ToolResponse):
+                print(packet.id)
                 if packet.id == SEARCH_RESPONSE_SUMMARY_ID:
+                    print("SEARCH RESPONSE SUMMARY")
                     (
                         qa_docs_response,
                         reference_db_search_docs,
@@ -747,6 +753,7 @@ def stream_chat_message_objects(
                             else False
                         ),
                     )
+
                     yield qa_docs_response
                 elif packet.id == SECTION_RELEVANCE_LIST_ID:
                     relevance_sections = packet.response

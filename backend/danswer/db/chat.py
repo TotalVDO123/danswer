@@ -721,6 +721,12 @@ def translate_db_search_doc_to_server_search_doc(
 def get_retrieval_docs_from_chat_message(
     chat_message: ChatMessage, remove_doc_content: bool = False
 ) -> RetrievalDocs:
+    print("RETRIEViNG DOCS")
+    print(chat_message.message)
+    print("SEARCH DOCS")
+    print(chat_message.search_docs)
+    print(chat_message.__dict__)
+    print("-----")
     top_documents = [
         translate_db_search_doc_to_server_search_doc(
             db_doc, remove_doc_content=remove_doc_content

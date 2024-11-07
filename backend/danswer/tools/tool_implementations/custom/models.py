@@ -30,8 +30,6 @@ class CustomToolSearchResult(BaseModel):
     document_id: str
     semantic_identifier: str
     blurb: str
-    source_type: str
-    score: float
     link: str | None = None
     updated_at: datetime | None = None
 
