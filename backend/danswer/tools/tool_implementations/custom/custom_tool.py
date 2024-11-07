@@ -98,7 +98,6 @@ class CustomTool(BaseTool):
         answer_style_config: AnswerStyleConfig | None = None,
         prompt_config: PromptConfig | None = None,
     ) -> None:
-        print("------\n\n\n-----\n\nCUSTOM TOOL INIT")
         self._base_url = base_url
         self._method_spec = method_spec
         self._tool_definition = self._method_spec.to_tool_definition()
@@ -336,7 +335,6 @@ class CustomTool(BaseTool):
         yield ToolResponse(id=FINAL_CONTEXT_DOCUMENTS_ID, response=llm_docs)
 
     def run(self, **kwargs: Any) -> Generator[ToolResponse, None, None]:
-        print("RUNNING")
         request_body = kwargs.get(REQUEST_BODY)
 
         path_params = {}
