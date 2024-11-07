@@ -24,7 +24,6 @@ from danswer.file_store.models import InMemoryChatFile
 from danswer.key_value_store.interface import JSON_ro
 from danswer.llm.answering.models import PreviousMessage
 from danswer.llm.answering.prompts.build import AnswerPromptBuilder
-from danswer.llm.answering.prune_and_merge import prune_and_merge_sections
 from danswer.llm.interfaces import LLM
 from danswer.search.models import DocumentSource
 from danswer.search.models import IndexFilters
@@ -126,31 +125,44 @@ class CustomTool(BaseTool):
     def build_tool_message_content(
         self, *args: ToolResponse
     ) -> str | list[str | dict[str, Any]]:
-        response = cast(CustomToolCallSummary, args[0].response)
+        final_context_docs_response = next(
+            (
+                response
+                for response in args
+                if response.id == FINAL_CONTEXT_DOCUMENTS_ID
+            ),
+            None,
+        )
 
-        if (
-            response.response_type == CustomToolResponseType.IMAGE
-            or response.response_type == CustomToolResponseType.CSV
-        ):
-            file_response = cast(CustomToolFileResponse, response.tool_result)
-            return json.dumps({"file_ids": file_response.file_ids})
-
-        elif response.response_type == CustomToolResponseType.SEARCH:
-            # Build message content for search results
-            final_docs_response = next(
-                arg for arg in args if arg.id == FINAL_CONTEXT_DOCUMENTS_ID
+        #  Handle the search type response
+        if final_context_docs_response:
+            final_context_docs = cast(
+                list[LlmDoc], final_context_docs_response.response
             )
-            final_docs = cast(List[LlmDoc], final_docs_response.response)
             return json.dumps(
                 {
                     "search_results": [
-                        llm_doc_to_dict(doc, ind) for ind, doc in enumerate(final_docs)
+                        llm_doc_to_dict(doc, ind)
+                        for ind, doc in enumerate(final_context_docs)
                     ]
                 }
             )
 
-        # For JSON or other responses, return as-is
-        return json.dumps(response.tool_result)
+        # Handle other response types
+        response = args[0].response
+        if isinstance(response, CustomToolCallSummary):
+            if response.response_type in [
+                CustomToolResponseType.IMAGE,
+                CustomToolResponseType.CSV,
+            ]:
+                file_response = cast(CustomToolFileResponse, response.tool_result)
+                return json.dumps({"file_ids": file_response.file_ids})
+
+            # For JSON or other responses, return as-is
+            return json.dumps(response.tool_result)
+
+        # If it's not a CustomToolCallSummary or search result, return as-is
+        return json.dumps(response)
 
     """For LLMs which do NOT support explicit tool calling"""
 
@@ -274,21 +286,26 @@ class CustomTool(BaseTool):
         for result in tool_result.results:
             chunk = InferenceChunk(
                 document_id=result.document_id,
-                chunk_id=str(uuid.uuid4()),
+                chunk_id=0,
                 content=result.content,
                 source_type=DocumentSource(result.source_type),
                 semantic_identifier=result.semantic_identifier,
                 blurb=result.blurb,
-                category=None,
-                link=result.link,
+                source_links={},
+                section_continuation=False,
+                title=result.semantic_identifier,  # Using semantic_identifier as title
+                boost=1,  # Default boost value
+                recency_bias=1.0,  # Default recency bias
+                hidden=False,
                 score=result.score,
                 metadata={},
+                match_highlights=[],  # Empty list for match highlights
+                updated_at=result.updated_at if hasattr(result, "updated_at") else None,
             )
             section = InferenceSection(
                 center_chunk=chunk,
-                additional_chunks_above=[],
-                additional_chunks_below=[],
-                is_unified=False,
+                chunks=[chunk],
+                combined_content=chunk.content,
             )
             inference_sections.append(section)
 
@@ -297,7 +314,7 @@ class CustomTool(BaseTool):
             SectionRelevancePiece(
                 relevant=True,
                 document_id=section.center_chunk.document_id,
-                chunk_id=section.center_chunk.chunk_id,
+                chunk_id=0,
             )
             for section in inference_sections
         ]
@@ -308,18 +325,17 @@ class CustomTool(BaseTool):
         )
 
         # Prune and merge sections
-        final_context_sections = prune_and_merge_sections(
-            sections=inference_sections,
-            section_relevance_list=None,
-            prompt_config=self.prompt_config,
-            llm_config=self.llm.config,
-            question="",  # Provide the query if available
-            contextual_pruning_config=self.contextual_pruning_config,
-        )
+        # final_context_sections = prune_and_merge_sections(
+        #     sections=inference_sections,
+        #     section_relevance_list=None,
+        #     prompt_config=self.prompt_config,
+        #     llm_config=self.llm.config,
+        #     question="",  # Provide the query if available
+        #     contextual_pruning_config=self.contextual_pruning_config,
+        # )
 
         llm_docs = [
-            llm_doc_from_inference_section(section)
-            for section in final_context_sections
+            llm_doc_from_inference_section(section) for section in inference_sections
         ]
 
         yield ToolResponse(id=FINAL_CONTEXT_DOCUMENTS_ID, response=llm_docs)
@@ -408,7 +424,7 @@ class CustomTool(BaseTool):
     ) -> AnswerPromptBuilder:
         response = cast(CustomToolCallSummary, tool_responses[0].response)
 
-        if response.response_type == CustomToolResponseType.SEARCH:
+        if isinstance(response, CustomToolCallSummary):
             return build_next_prompt_for_search_like_tool(
                 prompt_builder=prompt_builder,
                 tool_call_summary=tool_call_summary,
@@ -417,6 +433,7 @@ class CustomTool(BaseTool):
                 answer_style_config=self.answer_style_config,
                 prompt_config=self.prompt_config,
             )
+
         # Handle non-file responses using parent class behavior
         if response.response_type not in [
             CustomToolResponseType.IMAGE,
@@ -468,9 +485,24 @@ class CustomTool(BaseTool):
 
     def final_result(self, *args: ToolResponse) -> JSON_ro:
         response = cast(CustomToolCallSummary, args[0].response)
-        if isinstance(response.tool_result, CustomToolFileResponse):
-            return response.tool_result.model_dump()
-        return response.tool_result
+        if hasattr(response, "tool_result"):
+            if isinstance(response.tool_result, CustomToolFileResponse):
+                return response.tool_result.model_dump()
+
+            return response.tool_result
+        else:
+            final_docs = cast(
+                list[LlmDoc],
+                next(
+                    arg.response for arg in args if arg.id == FINAL_CONTEXT_DOCUMENTS_ID
+                ),
+            )
+            # NOTE: need to do this json.loads(doc.json()) stuff because there are some
+            # subfields that are not serializable by default (datetime)
+            # this forces pydantic to make them JSON serializable for us
+            return [json.loads(doc.model_dump_json()) for doc in final_docs]
+
+        # return response.tool_result
 
 
 def build_custom_tools_from_openapi_schema_and_headers(
