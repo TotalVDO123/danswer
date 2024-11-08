@@ -26,11 +26,11 @@ class CustomToolCallSummary(BaseModel):
 
 
 class CustomToolSearchResult(BaseModel):
-    content: str
     document_id: str
-    semantic_identifier: str
-    blurb: str
-    link: str | None = None
+    content: str  # content of the search result
+    blurb: str  # used to display in the UI
+    title: str
+    link: str | None = None  # optional source link
     updated_at: datetime | None = None
 
 

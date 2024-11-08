@@ -20,7 +20,6 @@ from danswer.configs.constants import FileOrigin
 from danswer.db.engine import get_session_with_tenant
 from danswer.file_store.file_store import get_default_file_store
 from danswer.file_store.models import ChatFileType
-from danswer.file_store.models import InMemoryChatFile
 from danswer.key_value_store.interface import JSON_ro
 from danswer.llm.answering.models import AnswerStyleConfig
 from danswer.llm.answering.models import PreviousMessage
@@ -65,8 +64,8 @@ from danswer.tools.tool_implementations.custom.openapi_parsing import REQUEST_BO
 from danswer.tools.tool_implementations.custom.openapi_parsing import (
     validate_openapi_schema,
 )
-from danswer.tools.tool_implementations.custom.prompt import (
-    build_custom_image_generation_user_prompt,
+from danswer.tools.tool_implementations.file_like_tool_utils import (
+    build_next_prompt_for_file_like_tool,
 )
 from danswer.tools.tool_implementations.search.search_tool import (
     FINAL_CONTEXT_DOCUMENTS_ID,
@@ -276,37 +275,40 @@ class CustomTool(BaseTool):
         for result in tool_result.results:
             chunk = InferenceChunk(
                 document_id=result.document_id,
-                chunk_id=0,
                 content=result.content,
-                source_type=DocumentSource.CUSTOM_TOOL,
-                semantic_identifier=result.semantic_identifier,
+                semantic_identifier=result.document_id,  # using document_id as semantic_identifier
                 blurb=result.blurb,
+                source_type=DocumentSource.CUSTOM_TOOL,
+                # Use defaults
+                chunk_id=0,
                 source_links={},
                 section_continuation=False,
-                title=result.semantic_identifier,  # Using semantic_identifier as title
-                boost=1,  # Default boost value
-                recency_bias=1.0,  # Default recency bias
+                title=result.title,
+                boost=0,
+                recency_bias=0,  # Default recency bias
                 hidden=False,
-                score=1.0,
+                score=0,
                 metadata={},
-                match_highlights=[],  # Empty list for match highlights
-                updated_at=result.updated_at if hasattr(result, "updated_at") else None,
+                match_highlights=[],
+                updated_at=result.updated_at,
             )
+
+            # We assume that each search result belongs to different documents
             section = InferenceSection(
                 center_chunk=chunk,
                 chunks=[chunk],
                 combined_content=chunk.content,
             )
+
             inference_sections.append(section)
 
-        # Create SearchResponseSummary
         search_response_summary = SearchResponseSummary(
             rephrased_query=None,
-            top_sections=inference_sections,  # Will be filled after processing the results
+            top_sections=inference_sections,
             predicted_flow=None,
             predicted_search=None,
-            final_filters=IndexFilters(access_control_list=None),  # Dummy filters
-            recency_bias_multiplier=1.0,
+            final_filters=IndexFilters(access_control_list=None),
+            recency_bias_multiplier=0.0,
         )
 
         yield ToolResponse(
@@ -373,6 +375,7 @@ class CustomTool(BaseTool):
 
         elif content_type == "application/json":
             tool_result = response.json()
+
             # Check if the response is a search result
             if isinstance(tool_result, list) and all(
                 "content" in item for item in tool_result
@@ -426,6 +429,7 @@ class CustomTool(BaseTool):
                 answer_style_config=self.answer_style_config,
                 prompt_config=self.prompt_config,
             )
+
         # Handle non-file responses using parent class behavior
         if response.response_type not in [
             CustomToolResponseType.IMAGE,
@@ -438,42 +442,18 @@ class CustomTool(BaseTool):
                 using_tool_calling_llm,
             )
 
-        # Handle image and CSV file responses
+        # Handle file responses
         file_type = (
             ChatFileType.IMAGE
             if response.response_type == CustomToolResponseType.IMAGE
             else ChatFileType.CSV
         )
 
-        # Load files from storage
-        files = []
-        with get_session_with_tenant() as db_session:
-            file_store = get_default_file_store(db_session)
-
-            for file_id in response.tool_result.file_ids:
-                try:
-                    file_io = file_store.read_file(file_id, mode="b")
-                    files.append(
-                        InMemoryChatFile(
-                            file_id=file_id,
-                            filename=file_id,
-                            content=file_io.read(),
-                            file_type=file_type,
-                        )
-                    )
-                except Exception:
-                    logger.exception(f"Failed to read file {file_id}")
-
-            # Update prompt with file content
-            prompt_builder.update_user_prompt(
-                build_custom_image_generation_user_prompt(
-                    query=prompt_builder.get_user_message_content(),
-                    files=files,
-                    file_type=file_type,
-                )
-            )
-
-        return prompt_builder
+        return build_next_prompt_for_file_like_tool(
+            prompt_builder,
+            response.tool_result.file_ids,
+            file_type,
+        )
 
     def final_result(self, *args: ToolResponse) -> JSON_ro:
         response = cast(CustomToolCallSummary, args[0].response)

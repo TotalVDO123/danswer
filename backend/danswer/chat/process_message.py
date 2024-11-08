@@ -822,15 +822,6 @@ def stream_chat_message_objects(
                         yield FileChatDisplay(
                             file_ids=[str(file_id) for file_id in file_ids]
                         )
-                    elif (
-                        custom_tool_response.response_type
-                        == CustomToolResponseType.SEARCH
-                    ):
-                        pass
-                        # yield SearchToolResponse(
-                        #     response=custom_tool_response.tool_result,
-                        #     tool_name=custom_tool_response.tool_name,
-                        # )
                     else:
                         yield CustomToolResponse(
                             response=custom_tool_response.tool_result,
