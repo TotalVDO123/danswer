@@ -1,13 +1,12 @@
-from utils.logger import setup_logger
-
 from danswer.db.engine import get_session_with_tenant
 from danswer.file_store.file_store import get_default_file_store
 from danswer.file_store.models import ChatFileType
 from danswer.file_store.models import InMemoryChatFile
 from danswer.llm.answering.prompts.build import AnswerPromptBuilder
-from danswer.tools.tool_implementations.custom.prompt import (
-    build_custom_image_generation_user_prompt,
+from danswer.tools.tool_implementations.images.prompt import (
+    build_image_generation_user_prompt,
 )
+from danswer.utils.logger import setup_logger
 
 
 FINAL_CONTEXT_DOCUMENTS_ID = "final_context_documents"
@@ -40,7 +39,7 @@ def build_next_prompt_for_file_like_tool(
 
         # Update prompt with file content
         prompt_builder.update_user_prompt(
-            build_custom_image_generation_user_prompt(
+            build_image_generation_user_prompt(
                 query=prompt_builder.get_user_message_content(),
                 files=files,
                 file_type=file_type,
