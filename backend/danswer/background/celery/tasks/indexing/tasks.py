@@ -359,6 +359,7 @@ def try_creating_indexing_task(
             task_id=custom_task_id,
             priority=DanswerCeleryPriority.MEDIUM,
         )
+
         if not result:
             raise RuntimeError("send_task for connector_indexing_proxy_task failed.")
 
@@ -406,7 +407,6 @@ def connector_indexing_proxy_task(
         search_settings_id,
         tenant_id,
         global_version.is_ee_version(),
-        pure=False,
     )
 
     if not job:
@@ -441,14 +441,23 @@ def connector_indexing_proxy_task(
                 if not index_attempt.is_finished():
                     continue
 
+        if job.process:
+            exit_code = job.process.exitcode
+            task_logger.info(
+                f"Job exit code: {exit_code} for attempt={index_attempt_id} "
+                f"tenant={tenant_id} cc_pair={cc_pair_id} search_settings={search_settings_id}"
+            )
+
         if job.status == "error":
+            if job.exception_queue and not job.exception_queue.empty():
+                error_message = job.exception_queue.get()
+            else:
+                error_message = job.exception()
             task_logger.error(
                 f"Indexing proxy - spawned task exceptioned: "
-                f"attempt={index_attempt_id} "
-                f"tenant={tenant_id} "
-                f"cc_pair={cc_pair_id} "
-                f"search_settings={search_settings_id} "
-                f"error={job.exception()}"
+                f"attempt={index_attempt_id} tenant={tenant_id} "
+                f"cc_pair={cc_pair_id} search_settings={search_settings_id} "
+                f"error={error_message}"
             )
 
         job.release()
@@ -469,7 +478,7 @@ def connector_indexing_task(
     search_settings_id: int,
     tenant_id: str | None,
     is_ee: bool,
-) -> int | None:
+) -> None:
     """Indexing task. For a cc pair, this task pulls all document IDs from the source
     and compares those IDs to locally stored documents and deletes all locally stored IDs missing
     from the most recently pulled document ID list
@@ -626,6 +635,7 @@ def connector_indexing_task(
         # get back the total number of indexed docs and return it
         n_final_progress = redis_connector_index.get_progress()
         redis_connector_index.set_generator_complete(HTTPStatus.OK.value)
+
     except Exception as e:
         logger.exception(
             f"Indexing spawned task failed: attempt={index_attempt_id} "
@@ -647,5 +657,5 @@ def connector_indexing_task(
         f"tenant={tenant_id} "
         f"cc_pair={cc_pair_id} "
         f"search_settings={search_settings_id}"
+        f"n_indexed_docs={n_final_progress}"
     )
-    return n_final_progress
