@@ -444,4 +444,4 @@ def reset_tenant_id(
     **other_kwargs: Any,
 ) -> None:
     """Signal handler to reset tenant ID in context var after task ends."""
-    CURRENT_TENANT_ID_CONTEXTVAR.set(None)
+    CURRENT_TENANT_ID_CONTEXTVAR.reset()
