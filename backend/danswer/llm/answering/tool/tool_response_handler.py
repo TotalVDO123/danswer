@@ -173,7 +173,9 @@ class ToolResponseHandler:
 
         return
 
-    def next_llm_call(self, current_llm_call: LLMCall) -> LLMCall | None:
+    def next_llm_call(
+        self, current_llm_call: LLMCall, tool_call_made: bool
+    ) -> LLMCall | None:
         if (
             self.tool_runner is None
             or self.tool_call_summary is None
@@ -191,7 +193,9 @@ class ToolResponseHandler:
         )
         return LLMCall(
             prompt_builder=new_prompt_builder,
-            tools=[],  # for now, only allow one tool call per response
+            tools=self.tools
+            if not tool_call_made
+            else [],  # for now, only allow one tool call per response
             force_use_tool=ForceUseTool(
                 force_use=False,
                 tool_name="",

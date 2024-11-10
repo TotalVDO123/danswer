@@ -19,6 +19,7 @@ from danswer.chat.models import MessageSpecificCitations
 from danswer.chat.models import QADocsResponse
 from danswer.chat.models import StreamingError
 from danswer.chat.models import StreamStopInfo
+from danswer.chat.models import StreamStopReason
 from danswer.configs.app_configs import AZURE_DALLE_API_BASE
 from danswer.configs.app_configs import AZURE_DALLE_API_KEY
 from danswer.configs.app_configs import AZURE_DALLE_API_VERSION
@@ -137,6 +138,7 @@ def _translate_citations(
     """Always cites the first instance of the document_id, assumes the db_docs
     are sorted in the order displayed in the UI"""
     doc_id_to_saved_doc_id_map: dict[str, int] = {}
+
     for db_doc in db_docs:
         if db_doc.document_id not in doc_id_to_saved_doc_id_map:
             doc_id_to_saved_doc_id_map[db_doc.document_id] = db_doc.id
@@ -687,6 +689,10 @@ def stream_chat_message_objects(
         tools: list[Tool] = []
         for tool_list in tool_dict.values():
             tools.extend(tool_list)
+        tool_name_to_tool_id: dict[str, int] = {}
+        for tool_id, tool_list in tool_dict.items():
+            for tool in tool_list:
+                tool_name_to_tool_id[tool.name] = tool_id
 
         # factor in tool definition size when pruning
         document_pruning_config.tool_num_tokens = compute_all_tool_tokens(
@@ -729,6 +735,74 @@ def stream_chat_message_objects(
         tool_result = None
 
         for packet in answer.processed_streamed_output:
+            if isinstance(packet, StreamStopInfo):
+                if packet.stop_reason is not StreamStopReason.NEW_RESPONSE:
+                    break
+                db_citations = None
+
+                if reference_db_search_docs:
+                    db_citations = _translate_citations(
+                        citations_list=answer.citations,
+                        db_docs=reference_db_search_docs,
+                    )
+
+                # Saving Gen AI answer and responding with message info
+                if tool_result is None:
+                    tool_call = None
+                else:
+                    tool_call = ToolCall(
+                        tool_id=tool_name_to_tool_id[tool_result.tool_name],
+                        tool_name=tool_result.tool_name,
+                        tool_arguments=tool_result.tool_args,
+                        tool_result=tool_result.tool_result,
+                    )
+
+                gen_ai_response_message = partial_response(
+                    reserved_message_id=reserved_message_id,
+                    message=answer.llm_answer,
+                    rephrased_query=cast(
+                        QADocsResponse, qa_docs_response
+                    ).rephrased_query
+                    if qa_docs_response is not None
+                    else None,
+                    reference_docs=reference_db_search_docs,
+                    files=ai_message_files,
+                    token_count=len(llm_tokenizer_encode_func(answer.llm_answer)),
+                    citations=cast(MessageSpecificCitations, db_citations).citation_map
+                    if db_citations is not None
+                    else None,
+                    error=None,
+                    tool_call=tool_call,
+                )
+                db_session.commit()  # actually save user / assistant message
+
+                msg_detail_response = translate_db_message_to_chat_message_detail(
+                    gen_ai_response_message
+                )
+
+                yield msg_detail_response
+                reserved_message_id = reserve_message_id(
+                    db_session=db_session,
+                    chat_session_id=chat_session_id,
+                    parent_message=gen_ai_response_message.id
+                    if user_message is not None
+                    else gen_ai_response_message.id,
+                    message_type=MessageType.ASSISTANT,
+                )
+
+                partial_response = partial(
+                    create_new_chat_message,
+                    chat_session_id=chat_session_id,
+                    parent_message=gen_ai_response_message,
+                    prompt_id=prompt_id,
+                    overridden_model=overridden_model,
+                    message_type=MessageType.ASSISTANT,
+                    alternate_assistant_id=new_msg_req.alternate_assistant_id,
+                    db_session=db_session,
+                    commit=False,
+                )
+                reference_db_search_docs = None
+
             if isinstance(packet, ToolResponse):
                 if packet.id == SEARCH_RESPONSE_SUMMARY_ID:
                     (
@@ -869,6 +943,8 @@ def stream_chat_message_objects(
         for tool_id, tool_list in tool_dict.items():
             for tool in tool_list:
                 tool_name_to_tool_id[tool.name] = tool_id
+        if answer.llm_answer == "":
+            return
 
         gen_ai_response_message = partial_response(
             reserved_message_id=reserved_message_id,

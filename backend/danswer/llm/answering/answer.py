@@ -9,6 +9,8 @@ from langchain_core.messages import ToolCall
 from danswer.chat.models import AnswerQuestionPossibleReturn
 from danswer.chat.models import CitationInfo
 from danswer.chat.models import DanswerAnswerPiece
+from danswer.chat.models import StreamStopInfo
+from danswer.chat.models import StreamStopReason
 from danswer.file_store.utils import InMemoryChatFile
 from danswer.llm.answering.llm_response_handler import LLMCall
 from danswer.llm.answering.llm_response_handler import LLMResponseHandlerManager
@@ -118,6 +120,9 @@ class Answer:
             )
             and not skip_explicit_tool_calling
         )
+        self.current_streamed_output: list = []
+
+        self.processing_stream: list = []
 
     def _get_tools_list(self) -> list[Tool]:
         if not self.force_use_tool.force_use:
@@ -155,6 +160,7 @@ class Answer:
         response_handler_manager = LLMResponseHandlerManager(
             tool_handler, DummyAnswerResponseHandler(), self.is_cancelled
         )
+
         yield from response_handler_manager.handle_llm_response(
             iter([dummy_tool_call_chunk])
         )
@@ -165,7 +171,13 @@ class Answer:
         else:
             raise RuntimeError("Tool call handler did not return a new LLM call")
 
-    def _get_response(self, llm_calls: list[LLMCall]) -> AnswerStream:
+    def _get_response(
+        self,
+        llm_calls: list[LLMCall],
+        check_for_tool_call: bool = False,
+        previously_used_tool: Tool | None = None,
+        previous_tool_response: ToolResponse | None = None,
+    ) -> AnswerStream:
         current_llm_call = llm_calls[-1]
 
         # handle the case where no decision has to be made; we simply run the tool
@@ -231,7 +243,6 @@ class Answer:
             tool_call_handler, answer_handler, self.is_cancelled
         )
 
-        # DEBUG: good breakpoint
         stream = self.llm.stream(
             prompt=current_llm_call.prompt_builder.build(),
             tools=[tool.tool_definition() for tool in current_llm_call.tools] or None,
@@ -242,11 +253,109 @@ class Answer:
             ),
             structured_response_format=self.answer_style_config.structured_response_format,
         )
-        yield from response_handler_manager.handle_llm_response(stream)
 
-        new_llm_call = response_handler_manager.next_llm_call(current_llm_call)
+        tool_call_made = False
+        tool_call_name: str | None = None
+        buffered_packets = []
+
+        tool_response = None
+        for packet in response_handler_manager.handle_llm_response(stream):
+            if isinstance(packet, DanswerAnswerPiece):
+                pass
+
+            if isinstance(packet, ToolResponse):
+                tool_response = packet
+
+            if check_for_tool_call:
+                buffered_packets.append(packet)
+                if isinstance(packet, ToolCallKickoff):
+                    # if has_streamed_text and not has_completed:
+                    #     yield StreamStopInfo(stop_reason=StreamStopReason.NEW_RESPONSE)
+                    #     has_completed = True
+
+                    tool_call_name = packet.tool_name
+                    tool_call_made = True
+                    for buffered_packet in buffered_packets:
+                        yield buffered_packet
+                    buffered_packets = []
+            else:
+                yield packet
+            if isinstance(packet, ToolCallKickoff):
+                # if has_streamed_text and not has_completed:
+                #     yield StreamStopInfo(stop_reason=StreamStopReason.NEW_RESPONSE)
+                #     has_completed = True
+                tool_call_name = packet.tool_name
+                tool_call_made = True
+
+        print(
+            "check_for_tool_call",
+            check_for_tool_call,
+            "tool_call_made",
+            tool_call_made,
+            "previously_used_tool",
+            previously_used_tool is not None,
+        )
+        if check_for_tool_call and not tool_call_made:
+            for remaining_packet in buffered_packets:
+                yield remaining_packet
+            return
+
+        for remaining_packet in buffered_packets:
+            yield remaining_packet
+
+        new_llm_call = response_handler_manager.next_llm_call(
+            current_llm_call, tool_call_made
+        )
+        tool_used: Tool | None = None
+        if tool_call_made:
+            tool_used = next(
+                (tool for tool in self.tools if tool.name == tool_call_name), None
+            )
+
         if new_llm_call:
-            yield from self._get_response(llm_calls + [new_llm_call])
+            yield from self._get_response(
+                llm_calls + [new_llm_call],
+                check_for_tool_call=not tool_call_made,
+                previously_used_tool=tool_used,
+                previous_tool_response=tool_response,
+            )
+
+        else:
+            yield StreamStopInfo(stop_reason=StreamStopReason.NEW_RESPONSE)
+
+            # Logic here
+            if (
+                not check_for_tool_call
+                and not tool_call_made
+                and not previously_used_tool
+            ):
+                return
+
+            if previously_used_tool:
+                previously_used_tool.build_prompt_after_tool_call(
+                    current_llm_call.prompt_builder,
+                    self.question,
+                    self.llm_answer,
+                    previous_tool_response,
+                )
+            # Build next prompter with the original question and the LLM's last answer
+            # current_llm_call.prompt_builder.update_user_prompt(HumanMessage(content=self.question))
+            # current_llm_call.prompt_builder.build_next_prompter(self.question, self.llm_answer)
+
+            llm_call = LLMCall(
+                prompt_builder=current_llm_call.prompt_builder,
+                tools=self._get_tools_list(),
+                force_use_tool=self.force_use_tool,
+                files=self.latest_query_files,
+                tool_call_info=[],
+                using_tool_calling_llm=self.using_tool_calling_llm,
+            )
+            yield from self._get_response(
+                [llm_call],
+                check_for_tool_call=not tool_call_made,
+                previously_used_tool=tool_used,
+                previous_tool_response=tool_response,
+            )
 
     @property
     def processed_streamed_output(self) -> AnswerStream:
@@ -276,26 +385,32 @@ class Answer:
             using_tool_calling_llm=self.using_tool_calling_llm,
         )
 
-        processed_stream = []
         for processed_packet in self._get_response([llm_call]):
-            processed_stream.append(processed_packet)
+            if (
+                isinstance(processed_packet, StreamStopInfo)
+                and processed_packet.stop_reason == StreamStopReason.NEW_RESPONSE
+            ):
+                self.current_streamed_output = self.processing_stream
+                self.processing_stream = []
+            self.processing_stream.append(processed_packet)
             yield processed_packet
-
-        self._processed_stream = processed_stream
+        self.current_streamed_output = self.processing_stream
+        self._processed_stream = self.processing_stream
 
     @property
     def llm_answer(self) -> str:
         answer = ""
-        for packet in self.processed_streamed_output:
+        if not self._processed_stream and not self.current_streamed_output:
+            return ""
+        for packet in self.current_streamed_output or self._processed_stream or []:
             if isinstance(packet, DanswerAnswerPiece) and packet.answer_piece:
                 answer += packet.answer_piece
-
         return answer
 
     @property
     def citations(self) -> list[CitationInfo]:
         citations: list[CitationInfo] = []
-        for packet in self.processed_streamed_output:
+        for packet in self.current_streamed_output or self._processed_stream or []:
             if isinstance(packet, CitationInfo):
                 citations.append(packet)
 
