@@ -18,6 +18,7 @@ import { FiTag } from "react-icons/fi";
 import { SettingsContext } from "../settings/SettingsProvider";
 import { CustomTooltip, TooltipGroup } from "../tooltip/CustomTooltip";
 import { WarningCircle } from "@phosphor-icons/react";
+import TextView from "../chat_search/TextView";
 
 export const buildDocumentSummaryDisplay = (
   matchHighlights: string[],
@@ -185,7 +186,27 @@ export const DocumentDisplay = ({
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
   const settings = useContext(SettingsContext);
+  const [isOpen, setIsOpen] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
+  const handleViewFile = async () => {
+    setIsOpen((isOpen) => !isOpen);
+    const fileId = document.document_id.split("__")[1];
+    try {
+      const response = await fetch(
+        `/api/chat/chat/file?file_id=${encodeURIComponent(fileId)}`,
+        {
+          method: "GET",
+        }
+      );
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setFileUrl(url); // Update the state with the object URL
+    } catch (error) {
+      console.error("Error fetching file:", error);
+      // Optionally, show an error message to the user
+    }
+  };
   return (
     <div
       key={document.semantic_identifier}
@@ -217,30 +238,20 @@ export const DocumentDisplay = ({
       >
         <div className="flex relative">
           <button
-            className={`rounded-lg  cursor-pointer flex font-bold text-link max-w-full ${
-              document.link ? "" : "pointer-events-none"
-            }`}
-            onClick={async () => {
-              console.log("evaluating");
-              const fileId = document.document_id.split("__")[1];
-              const response = await fetch(`/api/file/${fileId}`)
-                .then((response) => response.blob())
-                .then((blob) => {
-                  const url = window.URL.createObjectURL(blob);
-                  window.open(url, "_blank");
-                })
-                .catch((error) => console.error("Error fetching file:", error));
+            type="button"
+            className={`rounded-lg flex font-bold text-link max-w-full`}
+            onClick={() => {
+              if (document.link) {
+                window.open(document.link, "_blank");
+              } else {
+                handleViewFile();
+              }
             }}
           >
-            download the file
-            {/* {`/api/file/${document.document_id.split("__")[1]}`} */}
-            {/* <SourceIcon sourceType={document.source_type} iconSize={22} /> */}
-            {/* <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
-              {document.semantic_identifier ||
-                (document.document_id.includes("FILE_CONNECTOR__")
-                  ? document.document_id.split("__")[1].split("/").pop()
-                  : document.document_id)}
-            </p> */}
+            <SourceIcon sourceType={document.source_type} iconSize={22} />
+            <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
+              {document.semantic_identifier || document.document_id}
+            </p>
           </button>
           <div className="ml-auto flex items-center">
             <TooltipGroup>
@@ -273,13 +284,20 @@ export const DocumentDisplay = ({
                     </CustomTooltip>
                   </button>
                 )}
-              aaa
             </TooltipGroup>
           </div>
         </div>
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
+        {fileUrl && (
+          <TextView
+            fileUrl={fileUrl}
+            fileName={document.semantic_identifier || "Untitled"}
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+          />
+        )}
 
         <p
           style={{ transition: "height 0.30s ease-in-out" }}
@@ -308,11 +326,31 @@ export const AgenticDocumentDisplay = ({
   setPopup,
 }: DocumentDisplayProps) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   const [alternativeToggled, setAlternativeToggled] = useState(false);
 
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
+  const handleViewFile = async () => {
+    setIsOpen((isOpen) => !isOpen);
+    const fileId = document.document_id.split("__")[1];
+    try {
+      const response = await fetch(
+        `/api/chat/chat/file?file_id=${encodeURIComponent(fileId)}`,
+        {
+          method: "GET",
+        }
+      );
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setFileUrl(url); // Update the state with the object URL
+    } catch (error) {
+      console.error("Error fetching file:", error);
+      // Optionally, show an error message to the user
+    }
+  };
   return (
     <div
       key={document.semantic_identifier}
@@ -331,19 +369,24 @@ export const AgenticDocumentDisplay = ({
         }`}
       >
         <div className="flex relative">
-          <a
+          <button
+            type="button"
             className={`rounded-lg flex font-bold text-link max-w-full ${
               document.link ? "" : "pointer-events-none"
             }`}
-            href={document.link}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={() => {
+              if (document.link) {
+                window.open(document.link, "_blank");
+              } else {
+                handleViewFile();
+              }
+            }}
           >
             <SourceIcon sourceType={document.source_type} iconSize={22} />
             <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
               {document.semantic_identifier || document.document_id}
             </p>
-          </a>
+          </button>
 
           <div className="ml-auto items-center flex">
             <TooltipGroup>
@@ -376,6 +419,14 @@ export const AgenticDocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
+        {fileUrl && (
+          <TextView
+            fileUrl={fileUrl}
+            fileName={document.semantic_identifier || "Untitled"}
+            isOpen={isOpen}
+            onClose={() => setIsOpen(false)}
+          />
+        )}
 
         <div className="pt-2 break-words flex gap-x-2">
           <p
