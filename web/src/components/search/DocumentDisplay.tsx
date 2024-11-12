@@ -216,19 +216,32 @@ export const DocumentDisplay = ({
         }`}
       >
         <div className="flex relative">
-          <a
-            className={`rounded-lg flex font-bold text-link max-w-full ${
+          <button
+            className={`rounded-lg  cursor-pointer flex font-bold text-link max-w-full ${
               document.link ? "" : "pointer-events-none"
             }`}
-            href={document.link}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={async () => {
+              console.log("evaluating");
+              const fileId = document.document_id.split("__")[1];
+              const response = await fetch(`/api/file/${fileId}`)
+                .then((response) => response.blob())
+                .then((blob) => {
+                  const url = window.URL.createObjectURL(blob);
+                  window.open(url, "_blank");
+                })
+                .catch((error) => console.error("Error fetching file:", error));
+            }}
           >
-            <SourceIcon sourceType={document.source_type} iconSize={22} />
-            <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
-              {document.semantic_identifier || document.document_id}
-            </p>
-          </a>
+            download the file
+            {/* {`/api/file/${document.document_id.split("__")[1]}`} */}
+            {/* <SourceIcon sourceType={document.source_type} iconSize={22} /> */}
+            {/* <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
+              {document.semantic_identifier ||
+                (document.document_id.includes("FILE_CONNECTOR__")
+                  ? document.document_id.split("__")[1].split("/").pop()
+                  : document.document_id)}
+            </p> */}
+          </button>
           <div className="ml-auto flex items-center">
             <TooltipGroup>
               {isHovered && messageId && (
@@ -251,11 +264,16 @@ export const DocumentDisplay = ({
                   >
                     <CustomTooltip showTick line content="Toggle content">
                       <LightBulbIcon
-                        className={`${settings?.isMobile && alternativeToggled ? "text-green-600" : "text-blue-600"} my-auto ml-2 h-4 w-4 cursor-pointer`}
+                        className={`${
+                          settings?.isMobile && alternativeToggled
+                            ? "text-green-600"
+                            : "text-blue-600"
+                        } my-auto ml-2 h-4 w-4 cursor-pointer`}
                       />
                     </CustomTooltip>
                   </button>
                 )}
+              aaa
             </TooltipGroup>
           </div>
         </div>
@@ -308,7 +326,9 @@ export const AgenticDocumentDisplay = ({
       }}
     >
       <div
-        className={`collapsible ${!hide && "collapsible-closed overflow-y-auto border-transparent"}`}
+        className={`collapsible ${
+          !hide && "collapsible-closed overflow-y-auto border-transparent"
+        }`}
       >
         <div className="flex relative">
           <a
