@@ -186,12 +186,10 @@ export const DocumentDisplay = ({
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
   const settings = useContext(SettingsContext);
-  const [isOpen, setIsOpen] = useState(false);
   const [presentingDocument, setPresentingDocument] =
     useState<DanswerDocument | null>(null);
 
   const handleViewFile = async () => {
-    setIsOpen((isOpen) => !isOpen);
     setPresentingDocument(document);
   };
 
@@ -278,11 +276,11 @@ export const DocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
+
         {presentingDocument && (
           <TextView
             presentingDocument={presentingDocument}
-            isOpen={isOpen}
-            onClose={() => setIsOpen(false)}
+            onClose={() => setPresentingDocument(null)}
           />
         )}
 
@@ -313,7 +311,6 @@ export const AgenticDocumentDisplay = ({
   setPopup,
 }: DocumentDisplayProps) => {
   const [isHovered, setIsHovered] = useState(false);
-  const [isOpen, setIsOpen] = useState(false);
   const [presentingDocument, setPresentingDocument] =
     useState<DanswerDocument | null>(null);
 
@@ -321,10 +318,7 @@ export const AgenticDocumentDisplay = ({
 
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
-  const handleViewFile = async () => {
-    setIsOpen((isOpen) => !isOpen);
-    setPresentingDocument(document);
-  };
+
   return (
     <div
       key={document.semantic_identifier}
@@ -352,7 +346,7 @@ export const AgenticDocumentDisplay = ({
               if (document.link) {
                 window.open(document.link, "_blank");
               } else {
-                handleViewFile();
+                setPresentingDocument(document);
               }
             }}
           >
@@ -396,8 +390,7 @@ export const AgenticDocumentDisplay = ({
         {presentingDocument && (
           <TextView
             presentingDocument={presentingDocument}
-            isOpen={isOpen}
-            onClose={() => setIsOpen(false)}
+            onClose={() => setPresentingDocument(null)}
           />
         )}
 

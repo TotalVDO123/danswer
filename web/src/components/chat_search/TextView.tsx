@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,21 +10,19 @@ import {
 } from "@/components/ui/dialog";
 import { Download, XIcon, ZoomIn, ZoomOut } from "lucide-react";
 import { DanswerDocument } from "@/lib/search/interfaces";
+import { MinimalMarkdown } from "./MinimalMarkdown";
 
 interface TextViewProps {
   presentingDocument: DanswerDocument;
-  isOpen: boolean;
   onClose: () => void;
 }
 
 export default function TextView({
   presentingDocument,
-  isOpen,
   onClose,
 }: TextViewProps) {
   const [zoom, setZoom] = useState(100);
-  const [markdownContent, setMarkdownContent] = useState<string>("");
-
+  const [fileContent, setFileContent] = useState<string>("");
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
 
@@ -43,13 +40,18 @@ export default function TextView({
         const url = window.URL.createObjectURL(blob);
         setFileUrl(url);
         setFileName(presentingDocument.semantic_identifier || "document");
+
+        if (blob.type === "text/markdown" || blob.type === "text/plain") {
+          const text = await blob.text();
+          setFileContent(text);
+        }
       } catch (error) {
         console.error("Error fetching file:", error);
       }
     };
 
     fetchFile();
-  }, [document]);
+  }, [presentingDocument]);
 
   const handleDownload = () => {
     const link = document.createElement("a");
@@ -58,11 +60,6 @@ export default function TextView({
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
-
-  const handlePrint = () => {
-    const printWindow = window.open(fileUrl, "_blank");
-    printWindow?.print();
   };
 
   const fileType = useMemo(() => {
@@ -82,22 +79,11 @@ export default function TextView({
     }
   }, [fileName]);
 
-  useEffect(() => {
-    if (fileType === "text/markdown") {
-      fetch(fileUrl)
-        .then((response) => response.text())
-        .then((text) => setMarkdownContent(text))
-        .catch((error) =>
-          console.error("Error fetching Markdown content:", error)
-        );
-    }
-  }, [fileUrl, fileType]);
-
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 100));
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog open={true} onOpenChange={onClose}>
       <DialogContent
         hideCloseIcon
         className="max-w-5xl w-[90vw] flex flex-col justify-between gap-y-0 h-full max-h-[80vh] p-0"
@@ -122,7 +108,7 @@ export default function TextView({
             </Button>
             <Button variant="ghost" size="icon" onClick={() => onClose()}>
               <XIcon className="h-4 w-4" />
-              <span className="sr-only">Print</span>
+              <span className="sr-only">Close</span>
             </Button>
           </div>
         </DialogHeader>
@@ -145,10 +131,13 @@ export default function TextView({
                 />
               ) : fileType === "text/markdown" ? (
                 <div
-                  className="p-8 overflow-auto overflow-x-hidden"
+                  className="w-full overflow-auto overflow-x-hidden"
                   style={{ height: "100%" }}
                 >
-                  <ReactMarkdown>{markdownContent}</ReactMarkdown>
+                  <MinimalMarkdown
+                    content={fileContent}
+                    className="w-full text-wrap break-words"
+                  />
                 </div>
               ) : (
                 <iframe

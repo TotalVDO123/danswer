@@ -18,7 +18,6 @@ interface DocumentSidebarProps {
   isLoading: boolean;
   initialWidth: number;
   isOpen: boolean;
-  setIsOpen: Dispatch<SetStateAction<boolean>>;
   setPresentingDocument: Dispatch<SetStateAction<DanswerDocument | null>>;
 }
 
@@ -35,7 +34,6 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
       isLoading,
       initialWidth,
       isOpen,
-      setIsOpen,
       setPresentingDocument,
     },
     ref: ForwardedRef<HTMLDivElement>
@@ -108,7 +106,6 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
                       <ChatDocumentDisplay
                         closeSidebar={closeSidebar}
                         setPresentingDocument={setPresentingDocument}
-                        setIsOpen={setIsOpen}
                         document={document}
                         isAIPick={false}
                         isSelected={selectedDocumentIds.includes(

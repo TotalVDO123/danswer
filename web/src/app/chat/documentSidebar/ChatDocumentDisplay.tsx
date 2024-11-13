@@ -19,7 +19,6 @@ interface DocumentDisplayProps {
   handleSelect: (documentId: string) => void;
   tokenLimitReached: boolean;
   setPresentingDocument: Dispatch<SetStateAction<DanswerDocument | null>>;
-  setIsOpen: Dispatch<SetStateAction<boolean>>;
 }
 
 export function ChatDocumentDisplay({
@@ -30,7 +29,6 @@ export function ChatDocumentDisplay({
   handleSelect,
   tokenLimitReached,
   setPresentingDocument,
-  setIsOpen,
 }: DocumentDisplayProps) {
   const isInternet = document.is_internet;
   // Consider reintroducing null scored docs in the future
@@ -44,7 +42,6 @@ export function ChatDocumentDisplay({
 
     setTimeout(async () => {
       setPresentingDocument(document);
-      setIsOpen(true);
     }, 100);
   };
 

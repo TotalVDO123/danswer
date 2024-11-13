@@ -245,7 +245,6 @@ export function ChatPage({
   const [alternativeAssistant, setAlternativeAssistant] =
     useState<Persona | null>(null);
 
-  const [isOpen, setIsOpen] = useState(false);
   const [presentingDocument, setPresentingDocument] =
     useState<DanswerDocument | null>(null);
 
@@ -1825,6 +1824,7 @@ export function ChatPage({
       {popup}
 
       <ChatPopup />
+
       {currentFeedback && (
         <FeedbackModal
           feedbackType={currentFeedback[0]}
@@ -1876,8 +1876,7 @@ export function ChatPage({
       {presentingDocument && (
         <TextView
           presentingDocument={presentingDocument}
-          isOpen={isOpen}
-          onClose={() => setIsOpen(false)}
+          onClose={() => setPresentingDocument(null)}
         />
       )}
 
@@ -2184,6 +2183,9 @@ export function ChatPage({
                                     }
                                   >
                                     <AIMessage
+                                      setPresentingDocument={
+                                        setPresentingDocument
+                                      }
                                       continueGenerating={
                                         i == messageHistory.length - 1 &&
                                         currentCanContinue()
@@ -2525,7 +2527,6 @@ export function ChatPage({
         maxTokens={maxTokens}
         isLoading={isFetchingChatMessages}
         isOpen={documentSelection}
-        setIsOpen={setIsOpen}
         setPresentingDocument={setPresentingDocument}
       />
     </>
