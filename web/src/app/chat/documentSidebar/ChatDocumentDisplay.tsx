@@ -59,13 +59,11 @@ export function ChatDocumentDisplay({
             (document.link ? "" : "pointer-events-none")
           }
           onClick={() => {
-            console.log(document.document_id.split("__")[1]);
-            // if (document.link) {
-            //   window.open(document.link, "_blank");
-            // } else
-            //  {
-            handleViewFile();
-            // }
+            if (document.link) {
+              window.open(document.link, "_blank");
+            } else {
+              handleViewFile();
+            }
           }}
         >
           {isInternet ? (

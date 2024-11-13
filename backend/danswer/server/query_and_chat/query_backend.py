@@ -1,4 +1,5 @@
 import json
+import mimetypes
 from collections.abc import Generator
 from uuid import UUID
 
@@ -8,6 +9,7 @@ from fastapi import HTTPException
 from fastapi import Query
 from fastapi.responses import Response
 from fastapi.responses import StreamingResponse
+from magic import Magic
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -303,23 +305,19 @@ def get_other_chat_file(
     file_store = get_default_file_store(db_session)
 
     content = file_store.read_file(file_id, mode="b")
-
-    # Determine the media type based on the file extension
-    file_extension = file_id.split(".")[-1].lower()
-    if file_extension in ["md", "markdown"]:
-        media_type = "text/markdown"
-    elif file_extension in ["pdf"]:
-        media_type = "application/pdf"
-    elif file_extension in ["docx"]:
-        media_type = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-    else:
-        # Default to 'application/octet-stream' for unknown types
-        media_type = "application/octet-stream"
-    print(file_extension)
-
-    # Read the content of the file
     content_bytes = content.read()
+
+    # Use python-magic to determine the MIME type
+    mime = Magic(mime=True)
+    media_type = mime.from_buffer(content_bytes)
+
+    # If python-magic fails, fall back to mimetypes
+    if not media_type or media_type == "application/octet-stream":
+        media_type, _ = mimetypes.guess_type(file_id)
+
+    # If all else fails, use a default MIME type
+    if not media_type:
+        media_type = "application/octet-stream"
+    print(media_type)
 
     return Response(content=content_bytes, media_type=media_type)

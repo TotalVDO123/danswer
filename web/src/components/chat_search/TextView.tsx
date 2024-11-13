@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -16,7 +16,6 @@ interface TextViewProps {
   presentingDocument: DanswerDocument;
   onClose: () => void;
 }
-
 export default function TextView({
   presentingDocument,
   onClose,
@@ -26,38 +25,64 @@ export default function TextView({
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
   const [isLoading, setIsLoading] = useState(true);
+  const [fileType, setFileType] = useState<string>("application/octet-stream");
+
+  const isMarkdownFormat = (mimeType: string): boolean => {
+    const markdownFormats = [
+      "text/markdown",
+      "text/x-markdown",
+      "text/plain",
+      "text/x-rst",
+      "text/x-org",
+    ];
+    return markdownFormats.some((format) => mimeType.startsWith(format));
+  };
+
+  const isSupportedIframeFormat = (mimeType: string): boolean => {
+    const supportedFormats = [
+      "application/pdf",
+      "image/png",
+      "image/jpeg",
+      "image/gif",
+      "image/svg+xml",
+    ];
+    return supportedFormats.some((format) => mimeType.startsWith(format));
+  };
+
+  const fetchFile = useCallback(async () => {
+    setIsLoading(true);
+    const fileId = presentingDocument.document_id.split("__")[1];
+    try {
+      const response = await fetch(
+        `/api/query/file?file_id=${encodeURIComponent(fileId)}`,
+        {
+          method: "GET",
+        }
+      );
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      setFileUrl(url);
+      setFileName(presentingDocument.semantic_identifier || "document");
+      const contentType =
+        response.headers.get("Content-Type") || "application/octet-stream";
+      setFileType(contentType);
+
+      if (isMarkdownFormat(blob.type)) {
+        const text = await blob.text();
+        setFileContent(text);
+      }
+    } catch (error) {
+      console.error("Error fetching file:", error);
+    } finally {
+      setTimeout(() => {
+        setIsLoading(false);
+      }, 1000);
+    }
+  }, [presentingDocument]);
 
   useEffect(() => {
-    const fetchFile = async () => {
-      setIsLoading(true);
-      const fileId = presentingDocument.document_id.split("__")[1];
-      try {
-        const response = await fetch(
-          `/api/query/file?file_id=${encodeURIComponent(fileId)}`,
-          {
-            method: "GET",
-          }
-        );
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        setFileUrl(url);
-        setFileName(presentingDocument.semantic_identifier || "document");
-
-        if (blob.type === "text/markdown" || blob.type === "text/plain") {
-          const text = await blob.text();
-          setFileContent(text);
-        }
-      } catch (error) {
-        console.error("Error fetching file:", error);
-      } finally {
-        setTimeout(() => {
-          setIsLoading(false);
-        }, 1000);
-      }
-    };
-
     fetchFile();
-  }, [presentingDocument]);
+  }, [fetchFile]);
 
   const handleDownload = () => {
     const link = document.createElement("a");
@@ -67,23 +92,6 @@ export default function TextView({
     link.click();
     document.body.removeChild(link);
   };
-
-  const fileType = useMemo(() => {
-    const extension = fileName
-      ? fileName.split(".").pop()?.toLowerCase()
-      : "md";
-    switch (extension) {
-      case "md":
-      case "markdown":
-        return "text/markdown";
-      case "pdf":
-        return "application/pdf";
-      case "docx":
-        return "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-      default:
-        return "application/octet-stream";
-    }
-  }, [fileName]);
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 100));
@@ -121,9 +129,11 @@ export default function TextView({
         <div className="mt-0 rounded-b-lg flex-1 overflow-hidden">
           <div className="flex items-center justify-center w-full h-full">
             {isLoading ? (
-              <div className="text-center items-center flex flex-col">
-                <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-neutral-800"></div>
-                <p className="mt-4 text-xl font-medium">Loading document...</p>
+              <div className="flex flex-col items-center justify-center h-full">
+                <div className="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-primary"></div>
+                <p className="mt-6 text-lg font-medium text-muted-foreground">
+                  Loading document...
+                </p>
               </div>
             ) : (
               <div
@@ -135,13 +145,13 @@ export default function TextView({
                   height: "100%",
                 }}
               >
-                {fileType === "application/pdf" ? (
+                {isSupportedIframeFormat(fileType) ? (
                   <iframe
                     src={`${fileUrl}#toolbar=0`}
                     className="w-full h-full border-none"
-                    title="PDF Viewer"
+                    title="File Viewer"
                   />
-                ) : fileType === "text/markdown" ? (
+                ) : isMarkdownFormat(fileType) ? (
                   <div
                     className="w-full p-6 overflow-y-scroll overflow-x-hidden"
                     style={{ height: "100%" }}
@@ -152,11 +162,14 @@ export default function TextView({
                     />
                   </div>
                 ) : (
-                  <iframe
-                    src={fileUrl}
-                    className="w-full h-full border-none"
-                    title="File Viewer"
-                  />
+                  <div className="flex flex-col items-center justify-center h-full">
+                    <p className="text-lg font-medium text-muted-foreground">
+                      This file format is not supported for preview.
+                    </p>
+                    <Button className="mt-4" onClick={handleDownload}>
+                      Download File
+                    </Button>
+                  </div>
                 )}
               </div>
             )}
