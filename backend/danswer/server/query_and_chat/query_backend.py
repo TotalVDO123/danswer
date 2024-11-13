@@ -319,7 +319,7 @@ def get_other_chat_file(
         media_type = "application/octet-stream"
     print(file_extension)
 
-    # Read the content of the BytesIO object
-    content_bytes = content.getvalue()
+    # Read the content of the file
+    content_bytes = content.read()
 
     return Response(content=content_bytes, media_type=media_type)
