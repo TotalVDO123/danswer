@@ -5,7 +5,10 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
+from fastapi import Query
+from fastapi.responses import Response
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_curator_or_admin_user
@@ -26,6 +29,7 @@ from danswer.db.search_settings import get_current_search_settings
 from danswer.db.tag import find_tags
 from danswer.document_index.factory import get_default_document_index
 from danswer.document_index.vespa.index import VespaIndex
+from danswer.file_store.file_store import get_default_file_store
 from danswer.one_shot_answer.answer_question import stream_search_answer
 from danswer.one_shot_answer.models import DirectQARequest
 from danswer.search.models import IndexFilters
@@ -284,3 +288,38 @@ def get_answer_with_quote(
             yield json.dumps({"error": str(e)})
 
     return StreamingResponse(stream_generator(), media_type="application/json")
+
+
+class FileRequest(BaseModel):
+    file_id: str
+
+
+@basic_router.get("/file")
+def get_other_chat_file(
+    file_id: str = Query(..., alias="file_id"),
+    db_session: Session = Depends(get_session),
+    _: User | None = Depends(current_user),
+) -> Response:
+    file_store = get_default_file_store(db_session)
+
+    content = file_store.read_file(file_id, mode="b")
+
+    # Determine the media type based on the file extension
+    file_extension = file_id.split(".")[-1].lower()
+    if file_extension in ["md", "markdown"]:
+        media_type = "text/markdown"
+    elif file_extension in ["pdf"]:
+        media_type = "application/pdf"
+    elif file_extension in ["docx"]:
+        media_type = (
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+    else:
+        # Default to 'application/octet-stream' for unknown types
+        media_type = "application/octet-stream"
+    print(file_extension)
+
+    # Read the content of the BytesIO object
+    content_bytes = content.getvalue()
+
+    return Response(content=content_bytes, media_type=media_type)

@@ -18,7 +18,7 @@ interface DocumentDisplayProps {
   isSelected: boolean;
   handleSelect: (documentId: string) => void;
   tokenLimitReached: boolean;
-  setFileUrl: Dispatch<SetStateAction<string | null>>;
+  setPresentingDocument: Dispatch<SetStateAction<DanswerDocument | null>>;
   setIsOpen: Dispatch<SetStateAction<boolean>>;
 }
 
@@ -29,7 +29,7 @@ export function ChatDocumentDisplay({
   isSelected,
   handleSelect,
   tokenLimitReached,
-  setFileUrl,
+  setPresentingDocument,
   setIsOpen,
 }: DocumentDisplayProps) {
   const isInternet = document.is_internet;
@@ -41,23 +41,10 @@ export function ChatDocumentDisplay({
 
   const handleViewFile = async () => {
     closeSidebar();
+
     setTimeout(async () => {
-      setIsOpen((isOpen) => !isOpen);
-      const fileId = document.document_id.split("__")[1];
-      try {
-        const response = await fetch(
-          `/api/chat/chat/file?file_id=${encodeURIComponent(fileId)}`,
-          {
-            method: "GET",
-          }
-        );
-        const blob = await response.blob();
-        const url = window.URL.createObjectURL(blob);
-        setFileUrl(url); // Update the state with the object URL
-      } catch (error) {
-        console.error("Error fetching file:", error);
-        // Optionally, show an error message to the user
-      }
+      setPresentingDocument(document);
+      setIsOpen(true);
     }, 100);
   };
 

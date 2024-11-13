@@ -10,7 +10,6 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi import UploadFile
@@ -672,41 +671,6 @@ def upload_files_for_chat(
             for file_id, file_name, file_type in file_info
         ]
     }
-
-
-class FileRequest(BaseModel):
-    file_id: str
-
-
-@router.get("/chat/file")
-def get_other_chat_file(
-    file_id: str = Query(..., alias="file_id"),
-    db_session: Session = Depends(get_session),
-    _: User | None = Depends(current_user),
-) -> Response:
-    file_store = get_default_file_store(db_session)
-
-    content = file_store.read_file(file_id, mode="b")
-
-    # Determine the media type based on the file extension
-    file_extension = file_id.split(".")[-1].lower()
-    if file_extension in ["md", "markdown"]:
-        media_type = "text/markdown"
-    elif file_extension in ["pdf"]:
-        media_type = "application/pdf"
-    elif file_extension in ["docx"]:
-        media_type = (
-            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        )
-    else:
-        # Default to 'application/octet-stream' for unknown types
-        media_type = "application/octet-stream"
-    print(file_extension)
-
-    # Read the content of the BytesIO object
-    content_bytes = content.getvalue()
-
-    return Response(content=content_bytes, media_type=media_type)
 
 
 @router.get("/file/{file_id}")

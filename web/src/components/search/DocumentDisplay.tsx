@@ -187,26 +187,14 @@ export const DocumentDisplay = ({
     document.relevance_explanation ?? additional_relevance?.content;
   const settings = useContext(SettingsContext);
   const [isOpen, setIsOpen] = useState(false);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [presentingDocument, setPresentingDocument] =
+    useState<DanswerDocument | null>(null);
 
   const handleViewFile = async () => {
     setIsOpen((isOpen) => !isOpen);
-    const fileId = document.document_id.split("__")[1];
-    try {
-      const response = await fetch(
-        `/api/chat/chat/file?file_id=${encodeURIComponent(fileId)}`,
-        {
-          method: "GET",
-        }
-      );
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      setFileUrl(url); // Update the state with the object URL
-    } catch (error) {
-      console.error("Error fetching file:", error);
-      // Optionally, show an error message to the user
-    }
+    setPresentingDocument(document);
   };
+
   return (
     <div
       key={document.semantic_identifier}
@@ -290,10 +278,9 @@ export const DocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
-        {fileUrl && (
+        {presentingDocument && (
           <TextView
-            fileUrl={fileUrl}
-            fileName={document.semantic_identifier || "Untitled"}
+            presentingDocument={presentingDocument}
             isOpen={isOpen}
             onClose={() => setIsOpen(false)}
           />
@@ -327,7 +314,8 @@ export const AgenticDocumentDisplay = ({
 }: DocumentDisplayProps) => {
   const [isHovered, setIsHovered] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  const [presentingDocument, setPresentingDocument] =
+    useState<DanswerDocument | null>(null);
 
   const [alternativeToggled, setAlternativeToggled] = useState(false);
 
@@ -335,21 +323,7 @@ export const AgenticDocumentDisplay = ({
     document.relevance_explanation ?? additional_relevance?.content;
   const handleViewFile = async () => {
     setIsOpen((isOpen) => !isOpen);
-    const fileId = document.document_id.split("__")[1];
-    try {
-      const response = await fetch(
-        `/api/chat/chat/file?file_id=${encodeURIComponent(fileId)}`,
-        {
-          method: "GET",
-        }
-      );
-      const blob = await response.blob();
-      const url = window.URL.createObjectURL(blob);
-      setFileUrl(url); // Update the state with the object URL
-    } catch (error) {
-      console.error("Error fetching file:", error);
-      // Optionally, show an error message to the user
-    }
+    setPresentingDocument(document);
   };
   return (
     <div
@@ -419,10 +393,9 @@ export const AgenticDocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
-        {fileUrl && (
+        {presentingDocument && (
           <TextView
-            fileUrl={fileUrl}
-            fileName={document.semantic_identifier || "Untitled"}
+            presentingDocument={presentingDocument}
             isOpen={isOpen}
             onClose={() => setIsOpen(false)}
           />

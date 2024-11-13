@@ -19,7 +19,7 @@ interface DocumentSidebarProps {
   initialWidth: number;
   isOpen: boolean;
   setIsOpen: Dispatch<SetStateAction<boolean>>;
-  setFileUrl: Dispatch<SetStateAction<string | null>>;
+  setPresentingDocument: Dispatch<SetStateAction<DanswerDocument | null>>;
 }
 
 export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
@@ -36,11 +36,11 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
       initialWidth,
       isOpen,
       setIsOpen,
-      setFileUrl,
+      setPresentingDocument,
     },
     ref: ForwardedRef<HTMLDivElement>
   ) => {
-    const { popup, setPopup } = usePopup();
+    const { popup } = usePopup();
 
     const selectedDocumentIds =
       selectedDocuments?.map((document) => document.document_id) || [];
@@ -107,7 +107,7 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
                     >
                       <ChatDocumentDisplay
                         closeSidebar={closeSidebar}
-                        setFileUrl={setFileUrl}
+                        setPresentingDocument={setPresentingDocument}
                         setIsOpen={setIsOpen}
                         document={document}
                         isAIPick={false}

@@ -9,26 +9,66 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Download, Printer, ZoomIn, ZoomOut } from "lucide-react";
+import { Download, XIcon, ZoomIn, ZoomOut } from "lucide-react";
+import { DanswerDocument } from "@/lib/search/interfaces";
 
 interface TextViewProps {
-  fileUrl: string;
-  fileName: string;
+  presentingDocument: DanswerDocument;
   isOpen: boolean;
   onClose: () => void;
 }
 
 export default function TextView({
-  fileUrl,
-  fileName,
+  presentingDocument,
   isOpen,
   onClose,
 }: TextViewProps) {
   const [zoom, setZoom] = useState(100);
   const [markdownContent, setMarkdownContent] = useState<string>("");
 
+  const [fileUrl, setFileUrl] = useState<string>("");
+  const [fileName, setFileName] = useState<string>("");
+
+  useEffect(() => {
+    const fetchFile = async () => {
+      const fileId = presentingDocument.document_id.split("__")[1];
+      try {
+        const response = await fetch(
+          `/api/query/file?file_id=${encodeURIComponent(fileId)}`,
+          {
+            method: "GET",
+          }
+        );
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        setFileUrl(url);
+        setFileName(presentingDocument.semantic_identifier || "document");
+      } catch (error) {
+        console.error("Error fetching file:", error);
+      }
+    };
+
+    fetchFile();
+  }, [document]);
+
+  const handleDownload = () => {
+    const link = document.createElement("a");
+    link.href = fileUrl;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handlePrint = () => {
+    const printWindow = window.open(fileUrl, "_blank");
+    printWindow?.print();
+  };
+
   const fileType = useMemo(() => {
-    const extension = fileName.split(".").pop()?.toLowerCase();
+    const extension = fileName
+      ? fileName.split(".").pop()?.toLowerCase()
+      : "md";
     switch (extension) {
       case "md":
       case "markdown":
@@ -54,15 +94,15 @@ export default function TextView({
   }, [fileUrl, fileType]);
 
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 25, 200));
-  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 50));
+  const handleZoomOut = () => setZoom((prev) => Math.max(prev - 25, 100));
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent
         hideCloseIcon
-        className="max-w-5xl w-[90vw] flex flex-col justify-between gap-y-0 max-h-[80vh] p-0"
+        className="max-w-5xl w-[90vw] flex flex-col justify-between gap-y-0 h-full max-h-[80vh] p-0"
       >
-        <DialogHeader className="px-4 mb-0 py-2 flex flex-row items-center justify-between border-b">
+        <DialogHeader className="px-4 mb-0 pt-2 pb-3 flex flex-row items-center justify-between border-b">
           <DialogTitle className="text-lg font-medium truncate">
             {fileName}
           </DialogTitle>
@@ -76,52 +116,48 @@ export default function TextView({
               <ZoomIn className="h-4 w-4" />
               <span className="sr-only">Zoom In</span>
             </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => window.open(fileUrl, "_blank")}
-            >
+            <Button variant="ghost" size="icon" onClick={handleDownload}>
               <Download className="h-4 w-4" />
               <span className="sr-only">Download</span>
             </Button>
-            <Button variant="ghost" size="icon" onClick={() => window.print()}>
-              <Printer className="h-4 w-4" />
+            <Button variant="ghost" size="icon" onClick={() => onClose()}>
+              <XIcon className="h-4 w-4" />
               <span className="sr-only">Print</span>
             </Button>
           </div>
         </DialogHeader>
         <div className="mt-0 rounded-b-lg flex-1 overflow-hidden">
-          <div
-            style={{
-              width: `${zoom}%`,
-              height: `${zoom}%`,
-              minWidth: "100%",
-              minHeight: "100%",
-              transition: "width 0.3s ease",
-            }}
-          >
-            {fileType === "application/pdf" ? (
-              <iframe
-                src={`${fileUrl}#toolbar=0`}
-                className="w-full h-full border-none"
-                style={{ height: "calc(80vh - 60px)" }}
-                title="PDF Viewer"
-              />
-            ) : fileType === "text/markdown" ? (
-              <div
-                className="p-4 overflow-auto"
-                style={{ height: "calc(80vh - 60px)" }}
-              >
-                <ReactMarkdown>{markdownContent}</ReactMarkdown>
-              </div>
-            ) : (
-              <iframe
-                src={fileUrl}
-                className="w-full h-full border-none"
-                style={{ height: "calc(80vh - 60px)" }}
-                title="File Viewer"
-              />
-            )}
+          <div className="flex items-center justify-center w-full h-full">
+            <div
+              style={{
+                transform: `scale(${zoom / 100})`,
+                transformOrigin: "center center",
+                transition: "transform 0.3s ease",
+                width: "100%",
+                height: "100%",
+              }}
+            >
+              {fileType === "application/pdf" ? (
+                <iframe
+                  src={`${fileUrl}#toolbar=0`}
+                  className="w-full h-full border-none"
+                  title="PDF Viewer"
+                />
+              ) : fileType === "text/markdown" ? (
+                <div
+                  className="p-8 overflow-auto overflow-x-hidden"
+                  style={{ height: "100%" }}
+                >
+                  <ReactMarkdown>{markdownContent}</ReactMarkdown>
+                </div>
+              ) : (
+                <iframe
+                  src={fileUrl}
+                  className="w-full h-full border-none"
+                  title="File Viewer"
+                />
+              )}
+            </div>
           </div>
         </div>
       </DialogContent>

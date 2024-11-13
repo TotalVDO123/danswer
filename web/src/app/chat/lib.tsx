@@ -622,7 +622,7 @@ export async function uploadFilesForChat(
     formData.append("files", file);
   });
 
-  const response = await fetch("/api/chat/file", {
+  const response = await fetch("/api/query/file", {
     method: "POST",
     body: formData,
   });
@@ -644,7 +644,6 @@ export async function useScrollonStream({
 }: {
   chatState: ChatState;
   scrollableDivRef: RefObject<HTMLDivElement>;
-  waitForScrollRef: RefObject<boolean>;
   scrollDist: MutableRefObject<number>;
   endDivRef: RefObject<HTMLDivElement>;
   debounceNumber: number;
