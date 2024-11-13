@@ -25,9 +25,11 @@ export default function TextView({
   const [fileContent, setFileContent] = useState<string>("");
   const [fileUrl, setFileUrl] = useState<string>("");
   const [fileName, setFileName] = useState<string>("");
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     const fetchFile = async () => {
+      setIsLoading(true);
       const fileId = presentingDocument.document_id.split("__")[1];
       try {
         const response = await fetch(
@@ -47,6 +49,10 @@ export default function TextView({
         }
       } catch (error) {
         console.error("Error fetching file:", error);
+      } finally {
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 1000);
       }
     };
 
@@ -114,39 +120,46 @@ export default function TextView({
         </DialogHeader>
         <div className="mt-0 rounded-b-lg flex-1 overflow-hidden">
           <div className="flex items-center justify-center w-full h-full">
-            <div
-              style={{
-                transform: `scale(${zoom / 100})`,
-                transformOrigin: "center center",
-                transition: "transform 0.3s ease",
-                width: "100%",
-                height: "100%",
-              }}
-            >
-              {fileType === "application/pdf" ? (
-                <iframe
-                  src={`${fileUrl}#toolbar=0`}
-                  className="w-full h-full border-none"
-                  title="PDF Viewer"
-                />
-              ) : fileType === "text/markdown" ? (
-                <div
-                  className="w-full overflow-auto overflow-x-hidden"
-                  style={{ height: "100%" }}
-                >
-                  <MinimalMarkdown
-                    content={fileContent}
-                    className="w-full text-wrap break-words"
+            {isLoading ? (
+              <div className="text-center items-center flex flex-col">
+                <div className="animate-spin rounded-full h-32 w-32 border-t-2 border-b-2 border-neutral-800"></div>
+                <p className="mt-4 text-xl font-medium">Loading document...</p>
+              </div>
+            ) : (
+              <div
+                style={{
+                  transform: `scale(${zoom / 100})`,
+                  transformOrigin: "center center",
+                  transition: "transform 0.3s ease",
+                  width: "100%",
+                  height: "100%",
+                }}
+              >
+                {fileType === "application/pdf" ? (
+                  <iframe
+                    src={`${fileUrl}#toolbar=0`}
+                    className="w-full h-full border-none"
+                    title="PDF Viewer"
                   />
-                </div>
-              ) : (
-                <iframe
-                  src={fileUrl}
-                  className="w-full h-full border-none"
-                  title="File Viewer"
-                />
-              )}
-            </div>
+                ) : fileType === "text/markdown" ? (
+                  <div
+                    className="w-full p-6 overflow-y-scroll overflow-x-hidden"
+                    style={{ height: "100%" }}
+                  >
+                    <MinimalMarkdown
+                      content={fileContent}
+                      className="w-full pb-4 h-full text-lg text-wrap break-words"
+                    />
+                  </div>
+                ) : (
+                  <iframe
+                    src={fileUrl}
+                    className="w-full h-full border-none"
+                    title="File Viewer"
+                  />
+                )}
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
