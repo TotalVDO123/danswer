@@ -104,14 +104,8 @@ import BlurBackground from "./shared_chat_search/BlurBackground";
 import { NoAssistantModal } from "@/components/modals/NoAssistantModal";
 import { useAssistants } from "@/components/context/AssistantsContext";
 import { Separator } from "@/components/ui/separator";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-} from "@/components/ui/card";
-import { AssistantIcon } from "@/components/assistants/AssistantIcon";
 import AssistantBanner from "../../components/assistants/AssistantBanner";
+import TextView from "@/components/chat_search/TextView";
 
 const TEMP_USER_MESSAGE_ID = -1;
 const TEMP_ASSISTANT_MESSAGE_ID = -2;
@@ -250,6 +244,9 @@ export function ChatPage({
 
   const [alternativeAssistant, setAlternativeAssistant] =
     useState<Persona | null>(null);
+
+  const [isOpen, setIsOpen] = useState(false);
+  const [fileUrl, setFileUrl] = useState<string | null>(null);
 
   const {
     visibleAssistants: assistants,
@@ -1876,6 +1873,14 @@ export function ChatPage({
         />
       )}
 
+      {fileUrl && (
+        <TextView
+          fileUrl={fileUrl}
+          isOpen={isOpen}
+          onClose={() => setIsOpen(false)}
+        />
+      )}
+
       {stackTraceModalContent && (
         <ExceptionTraceModal
           onOutsideClick={() => setStackTraceModalContent(null)}
@@ -2520,6 +2525,8 @@ export function ChatPage({
         maxTokens={maxTokens}
         isLoading={isFetchingChatMessages}
         isOpen={documentSelection}
+        setIsOpen={setIsOpen}
+        setFileUrl={setFileUrl}
       />
     </>
   );

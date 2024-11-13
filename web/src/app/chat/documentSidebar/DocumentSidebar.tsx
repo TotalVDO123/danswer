@@ -4,7 +4,7 @@ import { ChatDocumentDisplay } from "./ChatDocumentDisplay";
 import { usePopup } from "@/components/admin/connectors/Popup";
 import { removeDuplicateDocs } from "@/lib/documentUtils";
 import { Message } from "../interfaces";
-import { ForwardedRef, forwardRef } from "react";
+import { Dispatch, ForwardedRef, forwardRef, SetStateAction } from "react";
 import { Separator } from "@/components/ui/separator";
 
 interface DocumentSidebarProps {
@@ -18,6 +18,8 @@ interface DocumentSidebarProps {
   isLoading: boolean;
   initialWidth: number;
   isOpen: boolean;
+  setIsOpen: Dispatch<SetStateAction<boolean>>;
+  setFileUrl: Dispatch<SetStateAction<string | null>>;
 }
 
 export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
@@ -33,6 +35,8 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
       isLoading,
       initialWidth,
       isOpen,
+      setIsOpen,
+      setFileUrl,
     },
     ref: ForwardedRef<HTMLDivElement>
   ) => {
@@ -102,9 +106,10 @@ export const DocumentSidebar = forwardRef<HTMLDivElement, DocumentSidebarProps>(
                       }`}
                     >
                       <ChatDocumentDisplay
+                        closeSidebar={closeSidebar}
+                        setFileUrl={setFileUrl}
+                        setIsOpen={setIsOpen}
                         document={document}
-                        setPopup={setPopup}
-                        queryEventId={null}
                         isAIPick={false}
                         isSelected={selectedDocumentIds.includes(
                           document.document_id
