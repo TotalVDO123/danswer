@@ -69,9 +69,16 @@ RUN apt-get update && \
         pkg-config \
         gcc && \
     apt-get install -y libxmlsec1-openssl && \
+    apt-get install -y magic \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \
     rm -f /usr/local/lib/python3.11/site-packages/tornado/test/test.key
+
+# Install libmagic1 for mime type detection
+RUN apt-get update && apt-get install -y \
+    libmagic1 \
+    && rm -rf /var/lib/apt/lists/*
+
 
 # Pre-downloading models for setups with limited egress
 RUN python -c "from tokenizers import Tokenizer; \

@@ -622,7 +622,7 @@ export async function uploadFilesForChat(
     formData.append("files", file);
   });
 
-  const response = await fetch("/api/query/file", {
+  const response = await fetch("/api/chat/file", {
     method: "POST",
     body: formData,
   });
