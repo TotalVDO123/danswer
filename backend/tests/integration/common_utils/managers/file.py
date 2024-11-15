@@ -1,7 +1,7 @@
+from io import IO
 from typing import List
 
 import requests
-from fastapi import UploadFile
 
 from danswer.file_store.models import FileDescriptor
 from tests.integration.common_utils.constants import API_SERVER_URL
@@ -12,22 +12,24 @@ from tests.integration.common_utils.test_models import DATestUser
 class FileManager:
     @staticmethod
     def upload_files(
-        files: List[UploadFile],
+        files: List[tuple[str, IO]],
         user_performing_action: DATestUser | None = None,
     ) -> List[FileDescriptor]:
-        form_data = []
-
-        form_data = {"files": files}
-
         headers = (
             user_performing_action.headers
             if user_performing_action
             else GENERAL_HEADERS
         )
 
+        files_param = []
+        for filename, file_obj in files:
+            files_param.append(
+                ("files", (filename, file_obj, "application/octet-stream"))
+            )
+
         response = requests.post(
             f"{API_SERVER_URL}/chat/file",
-            data=form_data,
+            files=files_param,
             headers=headers,
         )
 

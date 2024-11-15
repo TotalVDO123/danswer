@@ -13,7 +13,7 @@ def test_file_detection() -> None:
 
     from reportlab.pdfgen import canvas
 
-    admin_user: DATestUser = UserManager.create(name="aadmasadin_uqser")
+    admin_user: DATestUser = UserManager.create(name="aadmasadaasfasdfin_uqser")
 
     # Create a temporary PDF file
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
@@ -22,17 +22,8 @@ def test_file_detection() -> None:
         c.drawString(100, 750, "This is a test PDF file.")
         c.save()
 
-    from fastapi import UploadFile
-
     with open(pdf_path, "rb") as pdf_file:
-        upload_file = UploadFile(
-            file=pdf_file,
-            filename="test.pdf",
-            size=pdf_file.tell(),
-            headers={},
-        )
-        upload_file.seek(0)
-        test_files = FileManager.upload_files([upload_file], admin_user)
+        test_files = FileManager.upload_files([("test.pdf", pdf_file)], admin_user)
 
     # assert test_file[0].file_type == FileType.PDF
     print(test_files[0])
