@@ -1,17 +1,33 @@
+from langchain_core.messages import HumanMessage
+
 from danswer.db.engine import get_session_with_tenant
 from danswer.file_store.file_store import get_default_file_store
 from danswer.file_store.models import ChatFileType
 from danswer.file_store.models import InMemoryChatFile
 from danswer.llm.answering.prompts.build import AnswerPromptBuilder
-from danswer.tools.tool_implementations.images.prompt import (
-    build_image_generation_user_prompt,
-)
+from danswer.llm.utils import build_content_with_imgs
 from danswer.utils.logger import setup_logger
-
 
 FINAL_CONTEXT_DOCUMENTS_ID = "final_context_documents"
 
 logger = setup_logger()
+
+IMG_GENERATION_SUMMARY_PROMPT = """
+You have just created the attached images in response to the following query: "{query}".
+
+Can you please summarize them in a sentence or two? Do NOT include image urls or bulleted lists.
+"""
+
+
+def build_file_generation_user_prompt(
+    query: str, files: list[InMemoryChatFile] | None = None
+) -> HumanMessage:
+    return HumanMessage(
+        content=build_content_with_imgs(
+            message=IMG_GENERATION_SUMMARY_PROMPT.format(query=query).strip(),
+            files=files,
+        )
+    )
 
 
 def build_next_prompt_for_file_like_tool(
@@ -39,10 +55,9 @@ def build_next_prompt_for_file_like_tool(
 
         # Update prompt with file content
         prompt_builder.update_user_prompt(
-            build_image_generation_user_prompt(
+            build_file_generation_user_prompt(
                 query=prompt_builder.get_user_message_content(),
                 files=files,
-                file_type=file_type,
             )
         )
 

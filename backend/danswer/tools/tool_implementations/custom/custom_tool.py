@@ -364,14 +364,14 @@ class CustomTool(BaseTool):
                 response.content, content_type
             )
             tool_result = CustomToolFileResponse(file_ids=file_ids)
-            response_type = "csv"
+            response_type = CustomToolResponseType.CSV
 
         elif "image/" in content_type:
             file_ids = self._save_and_get_file_references(
                 response.content, content_type
             )
             tool_result = CustomToolFileResponse(file_ids=file_ids)
-            response_type = CustomTool
+            response_type = CustomToolResponseType.IMAGE
 
         elif content_type == "application/json":
             tool_result = response.json()
@@ -398,7 +398,9 @@ class CustomTool(BaseTool):
         logger.info(
             f"Returning tool response for {self._name} with type {response_type}"
         )
-        if response_type == CustomToolResponseType.SEARCH:
+        if response_type == CustomToolResponseType.SEARCH and isinstance(
+            tool_result, CustomToolSearchResponse
+        ):
             yield from self._handle_search_like_tool_response(tool_result)
 
         else:
@@ -420,7 +422,7 @@ class CustomTool(BaseTool):
     ) -> AnswerPromptBuilder:
         response = tool_responses[0].response
 
-        if isinstance(response, SearchResponseSummary):
+        if isinstance(response, SearchResponseSummary) and self.prompt_config:
             return build_next_prompt_for_search_like_tool(
                 prompt_builder=prompt_builder,
                 tool_call_summary=tool_call_summary,
@@ -452,7 +454,7 @@ class CustomTool(BaseTool):
         return build_next_prompt_for_file_like_tool(
             prompt_builder,
             response.tool_result.file_ids,
-            file_type,
+            file_type=file_type,
         )
 
     def final_result(self, *args: ToolResponse) -> JSON_ro:
