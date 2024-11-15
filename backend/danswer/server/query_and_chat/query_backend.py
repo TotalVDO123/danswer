@@ -1,14 +1,11 @@
 import json
-import mimetypes
 from collections.abc import Generator
 from uuid import UUID
 
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi.responses import Response
 from fastapi.responses import StreamingResponse
-from magic import Magic
 from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_curator_or_admin_user
@@ -29,7 +26,6 @@ from danswer.db.search_settings import get_current_search_settings
 from danswer.db.tag import find_tags
 from danswer.document_index.factory import get_default_document_index
 from danswer.document_index.vespa.index import VespaIndex
-from danswer.file_store.file_store import get_default_file_store
 from danswer.one_shot_answer.answer_question import stream_search_answer
 from danswer.one_shot_answer.models import DirectQARequest
 from danswer.search.models import IndexFilters
@@ -288,30 +284,3 @@ def get_answer_with_quote(
             yield json.dumps({"error": str(e)})
 
     return StreamingResponse(stream_generator(), media_type="application/json")
-
-
-@basic_router.get("/file/{file_id}")
-def get_other_chat_file(
-    file_id: str,
-    db_session: Session = Depends(get_session),
-    _: User | None = Depends(current_user),
-) -> Response:
-    file_store = get_default_file_store(db_session)
-
-    content = file_store.read_file(file_id, mode="b")
-    content_bytes = content.read()
-
-    # Use python-magic to determine the MIME type
-    mime = Magic(mime=True)
-    media_type = mime.from_buffer(content_bytes)
-
-    # If python-magic fails, fall back to mimetypes
-    if not media_type or media_type == "application/octet-stream":
-        media_type, _ = mimetypes.guess_type(file_id)
-
-    # If all else fails, use a default MIME type
-    if not media_type:
-        media_type = "application/octet-stream"
-    print(media_type)
-
-    return Response(content=content_bytes, media_type=media_type)

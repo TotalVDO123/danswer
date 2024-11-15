@@ -17,8 +17,6 @@ class FileManager:
         files: List[Tuple[str, IO]],
         user_performing_action: DATestUser | None = None,
     ) -> List[FileDescriptor]:
-        print("I am uploading these files")
-        print(files)
         headers = (
             user_performing_action.headers
             if user_performing_action
@@ -40,19 +38,16 @@ class FileManager:
         )
 
         if not response.ok:
-            print(response.json())
-
             return (
                 [],
                 f"Failed to upload files - {response.json().get('detail', 'Unknown error')}",
             )
 
         response_json = response.json()
-        print(response_json)
         return response_json.get("files", []), None
 
     @staticmethod
-    def fetch_chat_file(
+    def fetch_uploaded_file(
         file_id: str,
         user_performing_action: DATestUser | None = None,
     ) -> bytes:
@@ -64,15 +59,3 @@ class FileManager:
         )
         response.raise_for_status()
         return response.content
-
-    @staticmethod
-    def fetch_query_file(
-        file_id: str,
-        user_performing_action: DATestUser | None = None,
-    ) -> None:
-        requests.get(
-            f"{API_SERVER_URL}/query/file/{file_id}",
-            headers=user_performing_action.headers
-            if user_performing_action
-            else GENERAL_HEADERS,
-        )

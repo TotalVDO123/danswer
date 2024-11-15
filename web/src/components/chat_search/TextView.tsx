@@ -54,7 +54,7 @@ export default function TextView({
     const fileId = presentingDocument.document_id.split("__")[1];
     try {
       const response = await fetch(
-        `/api/query/file?file_id=${encodeURIComponent(fileId)}`,
+        `/api/chat/file/${encodeURIComponent(fileId)}`,
         {
           method: "GET",
         }

@@ -1,38 +1,30 @@
-# from danswer.file_store.models import FileOrigin
-# from danswer.file_store.models import FileDescriptor
-# from danswer.file_store.models import ChatFileType
+import tempfile
+
 from tests.integration.common_utils.managers.file import FileManager
 from tests.integration.common_utils.managers.user import UserManager
 from tests.integration.common_utils.test_models import DATestUser
 
-# from danswer.file_store.models import FileType
-
 
 def test_file_detection(reset: None) -> None:
-    import tempfile
+    admin_user: DATestUser = UserManager.create(name="admin_user")
 
-    from reportlab.pdfgen import canvas
+    test_content = "This is a test text file."
+    with tempfile.NamedTemporaryFile(
+        suffix=".txt", delete=False, mode="w"
+    ) as temp_file:
+        temp_file.write(test_content)
+        txt_path = temp_file.name
 
-    admin_user: DATestUser = UserManager.create(name="aadmasadaasfasdfin_uqser")
+    with open(txt_path, "rb") as txt_file:
+        test_files = FileManager.upload_files([("test.txt", txt_file)], admin_user)
 
-    # Create a temporary PDF file
-    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
-        pdf_path = temp_file.name
-        c = canvas.Canvas(pdf_path)
-        c.drawString(100, 750, "This is a test PDF file.")
-        c.save()
+    uploaded_file = test_files[0][0]
+    assert uploaded_file["name"] == "test.txt"
+    assert uploaded_file["type"] == "plain_text"
 
-    with open(pdf_path, "rb") as pdf_file:
-        test_files = FileManager.upload_files([("test.pdf", pdf_file)], admin_user)
+    file_content = FileManager.fetch_uploaded_file(uploaded_file["id"], admin_user)
+    assert file_content == test_content.encode()
 
-    # assert test_file[0].file_type == FileType.PDF
+    import os
 
-    file_descriptor = FileManager.fetch_query_file(test_files[0][0]["id"], admin_user)
-    print("file is", file_descriptor)
-    print("type is", type(file_descriptor))
-    # assert file_descriptor.file_type == "plain_text"
-    # assert file_descriptor.name == "test.pdf_file"
-    print("fetching chat file")
-    file_descriptor = FileManager.fetch_chat_file(test_files[0][0]["id"], admin_user)
-    print("file is", file_descriptor)
-    print("type is", type(file_descriptor))
+    os.unlink(txt_path)
