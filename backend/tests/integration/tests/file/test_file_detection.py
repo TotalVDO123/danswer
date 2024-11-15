@@ -2,13 +2,18 @@
 # from danswer.file_store.models import FileDescriptor
 # from danswer.file_store.models import ChatFileType
 from tests.integration.common_utils.managers.file import FileManager
+from tests.integration.common_utils.managers.user import UserManager
+from tests.integration.common_utils.test_models import DATestUser
 
 # from danswer.file_store.models import FileType
 
 
-def test_file_detection():
+def test_file_detection() -> None:
     import tempfile
+
     from reportlab.pdfgen import canvas
+
+    admin_user: DATestUser = UserManager.create(name="aadmasadin_uqser")
 
     # Create a temporary PDF file
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as temp_file:
@@ -17,10 +22,20 @@ def test_file_detection():
         c.drawString(100, 750, "This is a test PDF file.")
         c.save()
 
-    pdf_file = open(pdf_path, "rb")
-    test_file = FileManager.upload_files([pdf_file])
+    from fastapi import UploadFile
+
+    with open(pdf_path, "rb") as pdf_file:
+        upload_file = UploadFile(
+            file=pdf_file,
+            filename="test.pdf",
+            size=pdf_file.tell(),
+            headers={},
+        )
+        upload_file.seek(0)
+        test_files = FileManager.upload_files([upload_file], admin_user)
 
     # assert test_file[0].file_type == FileType.PDF
-
-    FileManager.fetch_query_file(test_file[0].id)
+    print(test_files[0])
+    print(type(test_files[0]))
+    FileManager.fetch_query_file(test_files[0].id)
     # assert recieved_file.file_type == FileType.PDF

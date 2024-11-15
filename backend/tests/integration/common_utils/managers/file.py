@@ -15,18 +15,33 @@ class FileManager:
         files: List[UploadFile],
         user_performing_action: DATestUser | None = None,
     ) -> List[FileDescriptor]:
-        response = requests.post(
-            f"{API_SERVER_URL}/file",
-            files=[
-                ("files", (file.filename, file.file, file.content_type))
-                for file in files
-            ],
-            headers=user_performing_action.headers
+        form_data = []
+
+        form_data = {"files": files}
+
+        headers = (
+            user_performing_action.headers
             if user_performing_action
-            else GENERAL_HEADERS,
+            else GENERAL_HEADERS
         )
-        response.raise_for_status()
-        return response.json()["files"]
+
+        response = requests.post(
+            f"{API_SERVER_URL}/chat/file",
+            data=form_data,
+            headers=headers,
+        )
+
+        if not response.ok:
+            print(response.json())
+
+            return (
+                [],
+                f"Failed to upload files - {response.json().get('detail', 'Unknown error')}",
+            )
+
+        response_json = response.json()
+        print(response_json)
+        return response_json.get("files", []), None
 
     @staticmethod
     def fetch_chat_file(
