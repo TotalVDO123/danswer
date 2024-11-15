@@ -1,5 +1,7 @@
-from io import IO
+import mimetypes
+from typing import IO
 from typing import List
+from typing import Tuple
 
 import requests
 
@@ -12,20 +14,24 @@ from tests.integration.common_utils.test_models import DATestUser
 class FileManager:
     @staticmethod
     def upload_files(
-        files: List[tuple[str, IO]],
+        files: List[Tuple[str, IO]],
         user_performing_action: DATestUser | None = None,
     ) -> List[FileDescriptor]:
+        print("I am uploading these files")
+        print(files)
         headers = (
             user_performing_action.headers
             if user_performing_action
             else GENERAL_HEADERS
         )
+        headers.pop("Content-Type", None)
 
         files_param = []
         for filename, file_obj in files:
-            files_param.append(
-                ("files", (filename, file_obj, "application/octet-stream"))
-            )
+            mime_type, _ = mimetypes.guess_type(filename)
+            if mime_type is None:
+                mime_type = "application/octet-stream"
+            files_param.append(("files", (filename, file_obj, mime_type)))
 
         response = requests.post(
             f"{API_SERVER_URL}/chat/file",
@@ -51,7 +57,7 @@ class FileManager:
         user_performing_action: DATestUser | None = None,
     ) -> bytes:
         response = requests.get(
-            f"{API_SERVER_URL}/file/{file_id}",
+            f"{API_SERVER_URL}/chat/file/{file_id}",
             headers=user_performing_action.headers
             if user_performing_action
             else GENERAL_HEADERS,

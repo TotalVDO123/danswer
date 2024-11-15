@@ -6,11 +6,9 @@ from uuid import UUID
 from fastapi import APIRouter
 from fastapi import Depends
 from fastapi import HTTPException
-from fastapi import Query
 from fastapi.responses import Response
 from fastapi.responses import StreamingResponse
 from magic import Magic
-from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from danswer.auth.users import current_curator_or_admin_user
@@ -292,13 +290,9 @@ def get_answer_with_quote(
     return StreamingResponse(stream_generator(), media_type="application/json")
 
 
-class FileRequest(BaseModel):
-    file_id: str
-
-
-@basic_router.get("/file")
+@basic_router.get("/file/{file_id}")
 def get_other_chat_file(
-    file_id: str = Query(..., alias="file_id"),
+    file_id: str,
     db_session: Session = Depends(get_session),
     _: User | None = Depends(current_user),
 ) -> Response:

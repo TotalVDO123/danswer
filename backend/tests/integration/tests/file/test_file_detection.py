@@ -8,7 +8,7 @@ from tests.integration.common_utils.test_models import DATestUser
 # from danswer.file_store.models import FileType
 
 
-def test_file_detection() -> None:
+def test_file_detection(reset: None) -> None:
     import tempfile
 
     from reportlab.pdfgen import canvas
@@ -26,7 +26,13 @@ def test_file_detection() -> None:
         test_files = FileManager.upload_files([("test.pdf", pdf_file)], admin_user)
 
     # assert test_file[0].file_type == FileType.PDF
-    print(test_files[0])
-    print(type(test_files[0]))
-    FileManager.fetch_query_file(test_files[0].id)
-    # assert recieved_file.file_type == FileType.PDF
+
+    file_descriptor = FileManager.fetch_query_file(test_files[0][0]["id"], admin_user)
+    print("file is", file_descriptor)
+    print("type is", type(file_descriptor))
+    # assert file_descriptor.file_type == "plain_text"
+    # assert file_descriptor.name == "test.pdf_file"
+    print("fetching chat file")
+    file_descriptor = FileManager.fetch_chat_file(test_files[0][0]["id"], admin_user)
+    print("file is", file_descriptor)
+    print("type is", type(file_descriptor))
