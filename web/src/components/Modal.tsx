@@ -18,6 +18,7 @@ interface ModalProps {
   hideDividerForTitle?: boolean;
   hideCloseButton?: boolean;
   noPadding?: boolean;
+  overflowContent?: boolean;
 }
 
 export function Modal({
@@ -31,6 +32,7 @@ export function Modal({
   noPadding,
   icon,
   hideCloseButton,
+  overflowContent = true,
 }: ModalProps) {
   const modalRef = useRef<HTMLDivElement>(null);
   const [isMounted, setIsMounted] = useState(false);
@@ -57,7 +59,7 @@ export function Modal({
     <div
       onMouseDown={handleMouseDown}
       className={`fixed inset-0 bg-black bg-opacity-25 backdrop-blur-sm h-full
-        flex items-center justify-center z-[9999] transition-opacity duration-300 ease-in-out`}
+        flex items-center justify-center z-50 transition-opacity duration-300 ease-in-out`}
     >
       <div
         ref={modalRef}
@@ -100,7 +102,11 @@ export function Modal({
               {!hideDividerForTitle && <Separator />}
             </>
           )}
-          <div className="max-h-[60vh] overflow-y-scroll">{children}</div>
+          <div
+            className={`max-h-[60vh] ${overflowContent && "overflow-y-scroll"}`}
+          >
+            {children}
+          </div>
         </div>
       </div>
     </div>
