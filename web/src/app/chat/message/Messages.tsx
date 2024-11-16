@@ -178,6 +178,7 @@ export const AIMessage = ({
   currentPersona,
   otherMessagesCanSwitchTo,
   onMessageSelection,
+  setPresentingDocument,
 }: {
   shared?: boolean;
   isActive?: boolean;
@@ -204,6 +205,7 @@ export const AIMessage = ({
   retrievalDisabled?: boolean;
   overriddenModel?: string;
   regenerate?: (modelOverRide: LlmOverride) => Promise<void>;
+  setPresentingDocument?: (document: DanswerDocument) => void;
 }) => {
   const toolCallGenerating = toolCall && !toolCall.tool_result;
   const processContent = (content: string | JSX.Element) => {
@@ -294,9 +296,19 @@ export const AIMessage = ({
     new Set((docs || []).map((doc) => doc.source_type))
   ).slice(0, 3);
 
+  const updatePresentingDocument = (documentIndex: number) => {
+    setPresentingDocument &&
+      setPresentingDocument(filteredDocs[documentIndex - 1]);
+  };
+
   const markdownComponents = useMemo(
     () => ({
-      a: MemoizedLink,
+      a: (props: any) => (
+        <MemoizedLink
+          {...props}
+          updatePresentingDocument={updatePresentingDocument}
+        />
+      ),
       p: MemoizedParagraph,
       code: ({ node, className, children, ...props }: any) => {
         const codeText = extractCodeText(
@@ -312,7 +324,7 @@ export const AIMessage = ({
         );
       },
     }),
-    [finalContent]
+    [finalContent, updatePresentingDocument]
   );
 
   const renderedMarkdown = useMemo(() => {
@@ -450,11 +462,12 @@ export const AIMessage = ({
                                   className={`w-[200px] rounded-lg flex-none transition-all duration-500 hover:bg-background-125 bg-text-100 px-4 pb-2 pt-1 border-b
                               `}
                                 >
-                                  <a
-                                    href={doc.link || undefined}
-                                    target="_blank"
+                                  <button
+                                    onClick={() => {
+                                      setPresentingDocument &&
+                                        setPresentingDocument(doc);
+                                    }}
                                     className="text-sm flex w-full pt-1 gap-x-1.5 overflow-hidden justify-between font-semibold text-text-700"
-                                    rel="noreferrer"
                                   >
                                     <Citation link={doc.link} index={ind + 1} />
                                     <p className="shrink truncate ellipsis break-all">
@@ -471,7 +484,7 @@ export const AIMessage = ({
                                         />
                                       )}
                                     </div>
-                                  </a>
+                                  </button>
                                   <div className="flex overscroll-x-scroll mt-.5">
                                     <DocumentMetadataBlock document={doc} />
                                   </div>

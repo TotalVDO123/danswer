@@ -294,6 +294,12 @@ class VespaIndex(DocumentIndex):
             zip_dict[f"schemas/{index_name}.sd"] = schema.encode("utf-8")
 
         zip_file = in_memory_zip_from_file_bytes(zip_dict)
+        # Save the zip file to disk for debugging purposes
+        with open("vespa_application.zip", "wb") as f:
+            f.write(zip_file.getvalue())
+
+        # Reset the file pointer to the beginning for the subsequent POST request
+        zip_file.seek(0)
 
         headers = {"Content-Type": "application/zip"}
         response = requests.post(deploy_url, headers=headers, data=zip_file)

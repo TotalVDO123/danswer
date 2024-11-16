@@ -9,25 +9,26 @@ import {
   buildDocumentSummaryDisplay,
 } from "@/components/search/DocumentDisplay";
 import { InternetSearchIcon } from "@/components/InternetSearchIcon";
+import { Dispatch, SetStateAction } from "react";
 
 interface DocumentDisplayProps {
+  closeSidebar: () => void;
   document: DanswerDocument;
-  queryEventId: number | null;
   isAIPick: boolean;
   isSelected: boolean;
   handleSelect: (documentId: string) => void;
-  setPopup: (popupSpec: PopupSpec | null) => void;
   tokenLimitReached: boolean;
+  setPresentingDocument: Dispatch<SetStateAction<DanswerDocument | null>>;
 }
 
 export function ChatDocumentDisplay({
+  closeSidebar,
   document,
-  queryEventId,
   isAIPick,
   isSelected,
   handleSelect,
-  setPopup,
   tokenLimitReached,
+  setPresentingDocument,
 }: DocumentDisplayProps) {
   const isInternet = document.is_internet;
   // Consider reintroducing null scored docs in the future
@@ -35,6 +36,14 @@ export function ChatDocumentDisplay({
   if (document.score === null) {
     return null;
   }
+
+  const handleViewFile = async () => {
+    closeSidebar();
+
+    setTimeout(async () => {
+      setPresentingDocument(document);
+    }, 100);
+  };
 
   return (
     <div
@@ -44,14 +53,18 @@ export function ChatDocumentDisplay({
       } text-sm mx-3`}
     >
       <div className="flex relative justify-start overflow-y-visible">
-        <a
-          href={document.link}
-          target="_blank"
+        <button
           className={
             "rounded-lg flex font-bold flex-shrink truncate" +
             (document.link ? "" : "pointer-events-none")
           }
-          rel="noreferrer"
+          onClick={() => {
+            if (document.link) {
+              window.open(document.link, "_blank");
+            } else {
+              handleViewFile();
+            }
+          }}
         >
           {isInternet ? (
             <InternetSearchIcon url={document.link} />
@@ -61,7 +74,7 @@ export function ChatDocumentDisplay({
           <p className="overflow-hidden text-left text-ellipsis mx-2 my-auto text-sm">
             {document.semantic_identifier || document.document_id}
           </p>
-        </a>
+        </button>
         {document.score !== null && (
           <div className="my-auto">
             {isAIPick && (

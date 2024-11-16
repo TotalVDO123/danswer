@@ -69,9 +69,11 @@ RUN apt-get update && \
         pkg-config \
         gcc && \
     apt-get install -y libxmlsec1-openssl && \
+    apt-get install -y magic \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && \
     rm -f /usr/local/lib/python3.11/site-packages/tornado/test/test.key
+
 
 # Pre-downloading models for setups with limited egress
 RUN python -c "from tokenizers import Tokenizer; \

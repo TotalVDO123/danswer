@@ -18,6 +18,7 @@ import { FiTag } from "react-icons/fi";
 import { SettingsContext } from "../settings/SettingsProvider";
 import { CustomTooltip, TooltipGroup } from "../tooltip/CustomTooltip";
 import { WarningCircle } from "@phosphor-icons/react";
+import TextView from "../chat_search/TextView";
 
 export const buildDocumentSummaryDisplay = (
   matchHighlights: string[],
@@ -185,6 +186,12 @@ export const DocumentDisplay = ({
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
   const settings = useContext(SettingsContext);
+  const [presentingDocument, setPresentingDocument] =
+    useState<DanswerDocument | null>(null);
+
+  const handleViewFile = async () => {
+    setPresentingDocument(document);
+  };
 
   return (
     <div
@@ -216,19 +223,22 @@ export const DocumentDisplay = ({
         }`}
       >
         <div className="flex relative">
-          <a
-            className={`rounded-lg flex font-bold text-link max-w-full ${
-              document.link ? "" : "pointer-events-none"
-            }`}
-            href={document.link}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            className={`rounded-lg flex font-bold text-link max-w-full`}
+            onClick={() => {
+              if (document.link) {
+                window.open(document.link, "_blank");
+              } else {
+                handleViewFile();
+              }
+            }}
           >
             <SourceIcon sourceType={document.source_type} iconSize={22} />
             <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
               {document.semantic_identifier || document.document_id}
             </p>
-          </a>
+          </button>
           <div className="ml-auto flex items-center">
             <TooltipGroup>
               {isHovered && messageId && (
@@ -251,7 +261,11 @@ export const DocumentDisplay = ({
                   >
                     <CustomTooltip showTick line content="Toggle content">
                       <LightBulbIcon
-                        className={`${settings?.isMobile && alternativeToggled ? "text-green-600" : "text-blue-600"} my-auto ml-2 h-4 w-4 cursor-pointer`}
+                        className={`${
+                          settings?.isMobile && alternativeToggled
+                            ? "text-green-600"
+                            : "text-blue-600"
+                        } my-auto ml-2 h-4 w-4 cursor-pointer`}
                       />
                     </CustomTooltip>
                   </button>
@@ -262,6 +276,13 @@ export const DocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
+
+        {presentingDocument && (
+          <TextView
+            presentingDocument={presentingDocument}
+            onClose={() => setPresentingDocument(null)}
+          />
+        )}
 
         <p
           style={{ transition: "height 0.30s ease-in-out" }}
@@ -290,11 +311,14 @@ export const AgenticDocumentDisplay = ({
   setPopup,
 }: DocumentDisplayProps) => {
   const [isHovered, setIsHovered] = useState(false);
+  const [presentingDocument, setPresentingDocument] =
+    useState<DanswerDocument | null>(null);
 
   const [alternativeToggled, setAlternativeToggled] = useState(false);
 
   const relevance_explanation =
     document.relevance_explanation ?? additional_relevance?.content;
+
   return (
     <div
       key={document.semantic_identifier}
@@ -308,22 +332,29 @@ export const AgenticDocumentDisplay = ({
       }}
     >
       <div
-        className={`collapsible ${!hide && "collapsible-closed overflow-y-auto border-transparent"}`}
+        className={`collapsible ${
+          !hide && "collapsible-closed overflow-y-auto border-transparent"
+        }`}
       >
         <div className="flex relative">
-          <a
+          <button
+            type="button"
             className={`rounded-lg flex font-bold text-link max-w-full ${
               document.link ? "" : "pointer-events-none"
             }`}
-            href={document.link}
-            target="_blank"
-            rel="noopener noreferrer"
+            onClick={() => {
+              if (document.link) {
+                window.open(document.link, "_blank");
+              } else {
+                setPresentingDocument(document);
+              }
+            }}
           >
             <SourceIcon sourceType={document.source_type} iconSize={22} />
             <p className="truncate text-wrap break-all ml-2 my-auto line-clamp-1 text-base max-w-full">
               {document.semantic_identifier || document.document_id}
             </p>
-          </a>
+          </button>
 
           <div className="ml-auto items-center flex">
             <TooltipGroup>
@@ -356,6 +387,12 @@ export const AgenticDocumentDisplay = ({
         <div className="mt-1">
           <DocumentMetadataBlock document={document} />
         </div>
+        {presentingDocument && (
+          <TextView
+            presentingDocument={presentingDocument}
+            onClose={() => setPresentingDocument(null)}
+          />
+        )}
 
         <div className="pt-2 break-words flex gap-x-2">
           <p
