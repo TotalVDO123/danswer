@@ -1,4 +1,5 @@
 import mimetypes
+from typing import cast
 from typing import IO
 from typing import List
 from typing import Tuple
@@ -16,7 +17,7 @@ class FileManager:
     def upload_files(
         files: List[Tuple[str, IO]],
         user_performing_action: DATestUser | None = None,
-    ) -> List[FileDescriptor]:
+    ) -> Tuple[List[FileDescriptor], str]:
         headers = (
             user_performing_action.headers
             if user_performing_action
@@ -39,12 +40,12 @@ class FileManager:
 
         if not response.ok:
             return (
-                [],
+                cast(List[FileDescriptor], []),
                 f"Failed to upload files - {response.json().get('detail', 'Unknown error')}",
             )
 
         response_json = response.json()
-        return response_json.get("files", []), None
+        return response_json.get("files", cast(List[FileDescriptor], [])), []
 
     @staticmethod
     def fetch_uploaded_file(
