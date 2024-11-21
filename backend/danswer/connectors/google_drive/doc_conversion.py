@@ -2,9 +2,11 @@ import io
 from datetime import datetime
 from datetime import timezone
 
+from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError  # type: ignore
 
 from danswer.configs.app_configs import CONTINUE_ON_CONNECTOR_FAILURE
+from danswer.configs.app_configs import GOOGLE_SHEET_API_ENABLED
 from danswer.configs.constants import DocumentSource
 from danswer.configs.constants import IGNORE_FOR_QA
 from danswer.connectors.google_drive.constants import DRIVE_FOLDER_TYPE
@@ -48,7 +50,40 @@ def _extract_sections_basic(
         return [Section(link=link, text=UNSUPPORTED_FILE_TYPE_CONTENT)]
 
     try:
-        if mime_type in [
+        if mime_type == GDriveMimeType.SPREADSHEET.value and GOOGLE_SHEET_API_ENABLED:
+            # Access credentials from the service object's HTTP object
+            sheets_service = build(
+                "sheets", "v4", credentials=service._http.credentials
+            )
+            spreadsheet = (
+                sheets_service.spreadsheets().get(spreadsheetId=file["id"]).execute()
+            )
+
+            sections = []
+            for sheet in spreadsheet["sheets"]:
+                sheet_name = sheet["properties"]["title"]
+                range_name = f"'{sheet_name}'!A1:Z1000"  # Adjust range as needed
+                result = (
+                    sheets_service.spreadsheets()
+                    .values()
+                    .get(spreadsheetId=file["id"], range=range_name)
+                    .execute()
+                )
+                values = result.get("values", [])
+
+                if values:
+                    text = f"Sheet: {sheet_name}\n"
+                    for row in values:
+                        text += "\t".join(str(cell) for cell in row) + "\n"
+                    sections.append(
+                        Section(
+                            link=f"{link}#gid={sheet['properties']['sheetId']}",
+                            text=text,
+                        )
+                    )
+
+            return sections
+        elif mime_type in [
             GDriveMimeType.DOC.value,
             GDriveMimeType.PPT.value,
             GDriveMimeType.SPREADSHEET.value,
@@ -65,6 +100,7 @@ def _extract_sections_basic(
                 .decode("utf-8")
             )
             return [Section(link=link, text=text)]
+
         elif mime_type in [
             GDriveMimeType.PLAIN_TEXT.value,
             GDriveMimeType.MARKDOWN.value,
